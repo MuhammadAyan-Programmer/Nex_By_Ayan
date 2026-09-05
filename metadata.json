@@ -1,0 +1,6 @@
+{
+  "name": "Nexora Workforce",
+  "description": "Global workforce platform connecting contributors with AI Data, Language, Translation, Annotation, Evaluation, and QA projects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
