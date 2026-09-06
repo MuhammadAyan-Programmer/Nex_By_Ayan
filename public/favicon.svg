@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36">
+  <defs>
+    <!-- Nexora Squircle Gradient -->
+    <linearGradient id="nexora-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="45%" stop-color="#4338CA" />
+      <stop offset="100%" stop-color="#2E1065" />
+    </linearGradient>
+
+    <!-- Left Pillar Gradient -->
+    <linearGradient id="nexora-left" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#E0E7FF" stop-opacity="0.95" />
+    </linearGradient>
+
+    <!-- Diagonal Bridge Gradient -->
+    <linearGradient id="nexora-diag" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#BAE6FD" />
+      <stop offset="40%" stop-color="#E0E7FF" />
+      <stop offset="100%" stop-color="#FFFFFF" />
+    </linearGradient>
+
+    <!-- Right Pillar Gradient -->
+    <linearGradient id="nexora-right" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#C7D2FE" stop-opacity="0.9" />
+    </linearGradient>
+
+    <!-- Subtle Drop Shadow Filter -->
+    <filter id="nexora-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1.2" stdDeviation="0.8" flood-color="#0F172A" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base with inner border highlight -->
+  <rect width="36" height="36" rx="9" fill="url(#nexora-bg)" />
+  <rect x="0.6" y="0.6" width="34.8" height="34.8" rx="8.4" stroke="rgba(255, 255, 255, 0.25)" stroke-width="1.2" fill="none" />
+
+  <!-- Ambient Top Light Flare -->
+  <ellipse cx="18" cy="2.5" rx="10" ry="2" fill="#FFFFFF" opacity="0.2" />
+
+  <!-- Monogram "N" -->
+  <g filter="url(#nexora-shadow)">
+    <!-- Left Pillar -->
+    <rect x="9" y="8.5" width="4.5" height="19" rx="2.25" fill="url(#nexora-left)" />
+    <!-- Right Pillar -->
+    <rect x="22.5" y="8.5" width="4.5" height="19" rx="2.25" fill="url(#nexora-right)" />
+    <!-- Diagonal Bridge -->
+    <path d="M 11.25 10.75 L 24.75 25.25" stroke="url(#nexora-diag)" stroke-width="4.5" stroke-linecap="round" />
+  </g>
+
+  <!-- Precision Active Signal Node (Global Talent Network Apex) -->
+  <circle cx="24.75" cy="8.75" r="2.2" fill="#38BDF8" />
+  <circle cx="24.75" cy="8.75" r="1.1" fill="#FFFFFF" />
+</svg>

@@ -487,6 +487,9 @@ app.post('/api/reset', (_req, res) => {
 // =================== VITE & STATIC SERVING ===================
 
 async function startServer() {
+  // Serve static assets (favicons, images, manifest) from public directory
+  app.use(express.static(path.join(process.cwd(), 'public')));
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
