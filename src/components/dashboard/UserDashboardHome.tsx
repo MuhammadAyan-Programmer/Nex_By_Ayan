@@ -14,8 +14,10 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  DollarSign,
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
+import { getProjectDisplayRate } from '../../utils/paymentUtils';
 
 interface UserDashboardHomeProps {
   onNavigate: (tab: UserTab) => void;
@@ -179,13 +181,32 @@ export const UserDashboardHome: React.FC<UserDashboardHomeProps> = ({
                   className="p-4 bg-white rounded-xl border border-slate-200 hover:border-indigo-200 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
                 >
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="blue" size="sm">
                         {project.category}
                       </Badge>
-                      <Badge variant="green" size="sm">
-                        Active Project
-                      </Badge>
+                      {project.status === 'Completed' ? (
+                        <Badge variant="purple" size="sm">
+                          ● Completed
+                        </Badge>
+                      ) : project.status === 'Closed' ? (
+                        <Badge variant="red" size="sm">
+                          ● Closed
+                        </Badge>
+                      ) : (
+                        <Badge variant="green" size="sm">
+                          ● Active
+                        </Badge>
+                      )}
+                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px] border border-emerald-200/60">
+                        <DollarSign className="w-3 h-3 text-emerald-600" />
+                        {getProjectDisplayRate(project)}
+                      </span>
+                      {project.paymentType && (
+                        <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                          {project.paymentType}
+                        </span>
+                      )}
                     </div>
                     <h3
                       onClick={() => onViewProject(project)}

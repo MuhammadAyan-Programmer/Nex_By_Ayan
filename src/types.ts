@@ -45,6 +45,9 @@ export interface PaymentMethod {
   createdAt: string;
 }
 
+export type PaymentType = 'Per Hour' | 'Per Item' | 'Per Task';
+export type PaymentAmountType = 'fixed' | 'range';
+
 export interface Project {
   id: string;
   name: string;
@@ -68,6 +71,11 @@ export interface Project {
   communityLink: string;
   announcement?: string;
   status: ProjectStatus;
+  paymentType?: PaymentType;
+  paymentRateType?: PaymentAmountType;
+  paymentAmount?: number;
+  paymentAmountMin?: number;
+  paymentAmountMax?: number;
   ratePay?: string;
   createdAt: string;
 }

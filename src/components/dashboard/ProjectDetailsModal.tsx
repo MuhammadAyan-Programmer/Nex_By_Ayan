@@ -14,8 +14,10 @@ import {
   Clock,
   Sparkles,
   Layers,
+  DollarSign,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { formatProjectPayment } from '../../utils/paymentUtils';
 
 interface ProjectDetailsModalProps {
   project: Project | null;
@@ -62,6 +64,8 @@ export const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                     ? 'green'
                     : project.status === 'Closed'
                     ? 'red'
+                    : project.status === 'Completed'
+                    ? 'purple'
                     : 'gray'
                 }
               >
@@ -166,12 +170,25 @@ export const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                   ))}
                 </div>
               </div>
-              {project.ratePay && (
-                <div className="pt-2 border-t border-slate-100">
-                  <p className="text-xs text-slate-500">Compensation Model:</p>
-                  <p className="text-xs font-bold text-emerald-700">{project.ratePay}</p>
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs text-slate-500 font-medium">Compensation Model:</p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200/60">
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    {formatProjectPayment(project)}
+                  </span>
+                  {project.paymentType && (
+                    <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md">
+                      {project.paymentType}
+                    </span>
+                  )}
+                  {project.paymentRateType && (
+                    <span className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">
+                      {project.paymentRateType === 'fixed' ? 'Fixed Rate' : 'Rate Range'}
+                    </span>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="p-4 border border-slate-200 rounded-xl space-y-3">
@@ -269,6 +286,12 @@ export const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                 >
                   {userApplication.status}
                 </Badge>
+              </div>
+            ) : project.status === 'Completed' ? (
+              <div className="flex items-center gap-2">
+                <span className="px-4 py-2 text-xs font-semibold text-purple-700 bg-purple-50 rounded-lg border border-purple-200">
+                  Project Completed
+                </span>
               </div>
             ) : project.status === 'Closed' ? (
               <button

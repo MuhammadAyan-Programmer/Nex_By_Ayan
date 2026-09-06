@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { ProjectCategory, ProjectStatus } from '../../types';
+import { ProjectCategory, ProjectStatus, PaymentType, PaymentAmountType } from '../../types';
 import { ALL_CATEGORIES } from '../../mockData';
 import { X, Plus, Sparkles, AlertCircle } from 'lucide-react';
+import { PaymentTypeConfigurator } from './PaymentTypeConfigurator';
+import { getPaymentUnitLabel } from '../../utils/paymentUtils';
 
 interface AdminCreateProjectModalProps {
   isOpen: boolean;
@@ -36,7 +38,13 @@ export const AdminCreateProjectModal: React.FC<AdminCreateProjectModalProps> = (
   const [communityLink, setCommunityLink] = useState('https://community.nexora.work/c/');
   const [announcement, setAnnouncement] = useState('');
   const [status, setStatus] = useState<ProjectStatus>('Open');
-  const [ratePay, setRatePay] = useState('$20.00 / hr');
+
+  // Payment configuration (Section 1: Payment Type & USD Amount / Range)
+  const [paymentType, setPaymentType] = useState<PaymentType>('Per Hour');
+  const [rateType, setRateType] = useState<PaymentAmountType>('fixed');
+  const [fixedAmount, setFixedAmount] = useState('25.00');
+  const [minAmount, setMinAmount] = useState('20.00');
+  const [maxAmount, setMaxAmount] = useState('35.00');
 
   if (!isOpen) return null;
 
@@ -46,6 +54,17 @@ export const AdminCreateProjectModal: React.FC<AdminCreateProjectModalProps> = (
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+
+    const unit = getPaymentUnitLabel(paymentType, false);
+    let finalRatePay = '';
+    if (rateType === 'fixed') {
+      const amt = parseFloat(fixedAmount) || 0;
+      finalRatePay = `$${amt.toFixed(2)} ${unit}`;
+    } else {
+      const min = parseFloat(minAmount) || 0;
+      const max = parseFloat(maxAmount) || 0;
+      finalRatePay = `$${min.toFixed(2)} - $${max.toFixed(2)} ${unit}`;
+    }
 
     createProject({
       name,
@@ -68,7 +87,12 @@ export const AdminCreateProjectModal: React.FC<AdminCreateProjectModalProps> = (
       communityLink,
       announcement: announcement || undefined,
       status,
-      ratePay,
+      paymentType,
+      paymentRateType: rateType,
+      paymentAmount: rateType === 'fixed' ? parseFloat(fixedAmount) || 0 : undefined,
+      paymentAmountMin: rateType === 'range' ? parseFloat(minAmount) || 0 : undefined,
+      paymentAmountMax: rateType === 'range' ? parseFloat(maxAmount) || 0 : undefined,
+      ratePay: finalRatePay,
     });
 
     onClose();
@@ -361,7 +385,7 @@ export const AdminCreateProjectModal: React.FC<AdminCreateProjectModalProps> = (
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                 />
               </div>
-              <div>
+              <div className="md:col-span-2">
                 <label className="block font-semibold text-slate-700 mb-1">Initial Status</label>
                 <select
                   value={status}
@@ -374,19 +398,23 @@ export const AdminCreateProjectModal: React.FC<AdminCreateProjectModalProps> = (
                   <option value="Completed">Completed</option>
                 </select>
               </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Compensation Rate (Display)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. $22.00 / hr or $15 per task"
-                  value={ratePay}
-                  onChange={(e) => setRatePay(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
             </div>
+          </div>
+
+          {/* Section: Payment & Compensation Model */}
+          <div className="space-y-3 pt-3 border-t border-slate-100">
+            <PaymentTypeConfigurator
+              paymentType={paymentType}
+              onChangePaymentType={setPaymentType}
+              rateType={rateType}
+              onChangeRateType={setRateType}
+              fixedAmount={fixedAmount}
+              onChangeFixedAmount={setFixedAmount}
+              minAmount={minAmount}
+              onChangeMinAmount={setMinAmount}
+              maxAmount={maxAmount}
+              onChangeMaxAmount={setMaxAmount}
+            />
           </div>
 
           <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">

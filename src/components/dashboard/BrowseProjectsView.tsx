@@ -19,7 +19,7 @@ export const BrowseProjectsView: React.FC<BrowseProjectsViewProps> = ({
   const { projects } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory || 'ALL');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'Open' | 'Closed'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'Open' | 'Closed' | 'Completed'>('ALL');
   const [languageFilter, setLanguageFilter] = useState<string>('ALL');
 
   // Extract unique languages
@@ -115,6 +115,7 @@ export const BrowseProjectsView: React.FC<BrowseProjectsViewProps> = ({
             >
               <option value="ALL">All Project Statuses</option>
               <option value="Open">Open Only (Accepting Applications)</option>
+              <option value="Completed">Completed Projects</option>
               <option value="Closed">Closed / Full</option>
             </select>
           </div>

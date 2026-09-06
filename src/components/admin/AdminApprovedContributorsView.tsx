@@ -28,14 +28,12 @@ export const AdminApprovedContributorsView: React.FC<AdminApprovedContributorsVi
     return matchSearch && matchProj;
   });
 
-  const handleRevoke = (appId: string, userName: string, projName: string) => {
-    if (
-      window.confirm(
-        `Are you sure you want to revoke ${userName}'s seat on "${projName}"? This will return the seat to remaining capacity.`
-      )
-    ) {
-      updateApplicationStatus(appId, 'Rejected', 'Project seat allocation revoked by administrator.');
-    }
+  const [appToRevoke, setAppToRevoke] = useState<{ id: string; userName: string; projectName: string } | null>(null);
+
+  const confirmRevoke = () => {
+    if (!appToRevoke) return;
+    updateApplicationStatus(appToRevoke.id, 'Rejected', 'Project seat allocation revoked by administrator.');
+    setAppToRevoke(null);
   };
 
   return (
@@ -141,7 +139,13 @@ export const AdminApprovedContributorsView: React.FC<AdminApprovedContributorsVi
                         )}
                         <button
                           type="button"
-                          onClick={() => handleRevoke(app.id, app.userName, app.projectName)}
+                          onClick={() =>
+                            setAppToRevoke({
+                              id: app.id,
+                              userName: app.userName,
+                              projectName: app.projectName,
+                            })
+                          }
                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
                           title="Revoke Contributor Seat"
                         >
@@ -156,6 +160,43 @@ export const AdminApprovedContributorsView: React.FC<AdminApprovedContributorsVi
           </table>
         </div>
       </div>
+
+      {/* Revoke Confirmation Modal */}
+      {appToRevoke && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60">
+          <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 p-6 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center">
+              <h3 className="text-base font-bold text-slate-900">Revoke Contributor Seat?</h3>
+              <p className="text-xs text-slate-600 mt-1">
+                Are you sure you want to revoke <span className="font-semibold text-slate-900">{appToRevoke.userName}</span> from <span className="font-semibold text-slate-900">"{appToRevoke.projectName}"</span>?
+              </p>
+              <p className="text-[11px] text-rose-600 bg-rose-50 p-2 rounded-lg border border-rose-100 mt-2">
+                This will release the seat back to available capacity for other applicants.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setAppToRevoke(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmRevoke}
+                className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Revoke Seat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

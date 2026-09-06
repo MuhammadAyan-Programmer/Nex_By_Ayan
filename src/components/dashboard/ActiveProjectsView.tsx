@@ -12,8 +12,11 @@ import {
   Layers,
   ArrowRight,
   Clock,
+  DollarSign,
+  CheckCircle2,
 } from 'lucide-react';
 import { UserTab } from './UserSidebar';
+import { getProjectDisplayRate, getPaymentTypeBadgeInfo } from '../../utils/paymentUtils';
 
 interface ActiveProjectsViewProps {
   onViewProject: (project: Project) => void;
@@ -84,10 +87,25 @@ export const ActiveProjectsView: React.FC<ActiveProjectsViewProps> = ({
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-slate-100">
                   <div>
-                    <div className="flex items-center gap-2 mb-1.5">
+                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
                       <Badge variant="blue">{project.category}</Badge>
-                      <Badge variant="green">● Active Project</Badge>
-                      <span className="text-[11px] text-slate-400">
+                      {project.status === 'Completed' ? (
+                        <Badge variant="purple">● Completed</Badge>
+                      ) : project.status === 'Closed' ? (
+                        <Badge variant="red">● Closed</Badge>
+                      ) : (
+                        <Badge variant="green">● Active / In Progress</Badge>
+                      )}
+                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60 text-xs">
+                        <DollarSign className="w-3 h-3 text-emerald-600" />
+                        {getProjectDisplayRate(project)}
+                      </span>
+                      {project.paymentType && (
+                        <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.5 rounded">
+                          {project.paymentType}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-slate-400 ml-auto sm:ml-0">
                         Starts: {project.startDate} • Ends: {project.endDate}
                       </span>
                     </div>
@@ -115,6 +133,17 @@ export const ActiveProjectsView: React.FC<ActiveProjectsViewProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Completed status announcement banner */}
+                {project.status === 'Completed' && (
+                  <div className="p-3 bg-purple-50 rounded-lg border border-purple-200/80 text-xs text-purple-950 flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Project Completed: </span>
+                      This project has been marked as Completed by administrator. Tasks and deliverables have concluded. Project records and instructions remain accessible here for your reference.
+                    </div>
+                  </div>
+                )}
 
                 {/* Instructions Box */}
                 <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80 text-xs">

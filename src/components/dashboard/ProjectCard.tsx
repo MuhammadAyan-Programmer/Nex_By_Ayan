@@ -1,8 +1,9 @@
 import React from 'react';
 import { Project } from '../../types';
 import { Badge } from '../common/Badge';
-import { Calendar, Users, Globe, ArrowUpRight } from 'lucide-react';
+import { Calendar, Users, Globe, ArrowUpRight, DollarSign } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { formatProjectPayment } from '../../utils/paymentUtils';
 
 interface ProjectCardProps {
   project: Project;
@@ -39,6 +40,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
                 ? 'green'
                 : project.status === 'Closed'
                 ? 'red'
+                : project.status === 'Completed'
+                ? 'purple'
                 : 'gray'
             }
             size="sm"
@@ -99,9 +102,15 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
           <span className="flex items-center gap-1">
             <Calendar className="w-3 h-3 text-slate-400" /> Start: {project.startDate}
           </span>
-          {project.ratePay && (
-            <span className="font-semibold text-emerald-700">{project.ratePay}</span>
-          )}
+          <div className="flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+            <DollarSign className="w-3 h-3 text-emerald-600" />
+            <span>{formatProjectPayment(project)}</span>
+            {project.paymentType && (
+              <span className="text-[10px] text-emerald-600 font-normal">
+                ({project.paymentType})
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -115,7 +124,11 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
           VIEW DETAILS
         </button>
 
-        {userApp ? (
+        {project.status === 'Completed' ? (
+          <span className="flex-1 py-1.5 px-2 text-center text-xs font-semibold text-purple-700 bg-purple-50 rounded-md border border-purple-200">
+            Completed
+          </span>
+        ) : userApp ? (
           <span className="flex-1 py-1.5 px-2 text-center text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-md border border-emerald-200/60">
             {userApp.status === 'Approved' ? 'Active' : userApp.status}
           </span>

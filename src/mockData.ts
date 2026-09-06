@@ -45,7 +45,10 @@ export const INITIAL_PROJECTS: Project[] = [
     announcement:
       'The Arabic → English Translation Project is officially open for applications. Complete your contributor profile and apply to schedule your qualification benchmark.',
     status: 'Open',
-    ratePay: '$22.00 / hr or per task unit',
+    paymentType: 'Per Hour',
+    paymentRateType: 'fixed',
+    paymentAmount: 22.0,
+    ratePay: '$22.00 / hr',
     createdAt: '2026-09-01',
   },
 ];
