@@ -9,6 +9,206 @@ interface AuthModalProps {
   initialMode?: 'login' | 'register';
 }
 
+// Complete country list — A to Z
+const COUNTRIES = [
+  'Afghanistan',
+  'Albania',
+  'Algeria',
+  'Andorra',
+  'Angola',
+  'Antigua and Barbuda',
+  'Argentina',
+  'Armenia',
+  'Australia',
+  'Austria',
+  'Azerbaijan',
+  'Bahamas',
+  'Bahrain',
+  'Bangladesh',
+  'Barbados',
+  'Belarus',
+  'Belgium',
+  'Belize',
+  'Benin',
+  'Bhutan',
+  'Bolivia',
+  'Bosnia and Herzegovina',
+  'Botswana',
+  'Brazil',
+  'Brunei',
+  'Bulgaria',
+  'Burkina Faso',
+  'Burundi',
+  'Cabo Verde',
+  'Cambodia',
+  'Cameroon',
+  'Canada',
+  'Central African Republic',
+  'Chad',
+  'Chile',
+  'China',
+  'Colombia',
+  'Comoros',
+  'Congo, Democratic Republic of the',
+  'Congo, Republic of the',
+  'Costa Rica',
+  'Cote d’Ivoire',
+  'Croatia',
+  'Cuba',
+  'Cyprus',
+  'Czech Republic',
+  'Denmark',
+  'Djibouti',
+  'Dominica',
+  'Dominican Republic',
+  'Ecuador',
+  'Egypt',
+  'El Salvador',
+  'Equatorial Guinea',
+  'Eritrea',
+  'Estonia',
+  'Eswatini',
+  'Ethiopia',
+  'Fiji',
+  'Finland',
+  'France',
+  'Gabon',
+  'Gambia',
+  'Georgia',
+  'Germany',
+  'Ghana',
+  'Greece',
+  'Grenada',
+  'Guatemala',
+  'Guinea',
+  'Guinea-Bissau',
+  'Guyana',
+  'Haiti',
+  'Honduras',
+  'Hungary',
+  'Iceland',
+  'India',
+  'Indonesia',
+  'Iran',
+  'Iraq',
+  'Ireland',
+  'Israel',
+  'Italy',
+  'Jamaica',
+  'Japan',
+  'Jordan',
+  'Kazakhstan',
+  'Kenya',
+  'Kiribati',
+  'Kuwait',
+  'Kyrgyzstan',
+  'Laos',
+  'Latvia',
+  'Lebanon',
+  'Lesotho',
+  'Liberia',
+  'Libya',
+  'Liechtenstein',
+  'Lithuania',
+  'Luxembourg',
+  'Madagascar',
+  'Malawi',
+  'Malaysia',
+  'Maldives',
+  'Mali',
+  'Malta',
+  'Marshall Islands',
+  'Mauritania',
+  'Mauritius',
+  'Mexico',
+  'Micronesia',
+  'Moldova',
+  'Monaco',
+  'Mongolia',
+  'Montenegro',
+  'Morocco',
+  'Mozambique',
+  'Myanmar',
+  'Namibia',
+  'Nauru',
+  'Nepal',
+  'Netherlands',
+  'New Zealand',
+  'Nicaragua',
+  'Niger',
+  'Nigeria',
+  'North Korea',
+  'North Macedonia',
+  'Norway',
+  'Oman',
+  'Pakistan',
+  'Palau',
+  'Palestine',
+  'Panama',
+  'Papua New Guinea',
+  'Paraguay',
+  'Peru',
+  'Philippines',
+  'Poland',
+  'Portugal',
+  'Qatar',
+  'Romania',
+  'Russia',
+  'Rwanda',
+  'Saint Kitts and Nevis',
+  'Saint Lucia',
+  'Saint Vincent and the Grenadines',
+  'Samoa',
+  'San Marino',
+  'Sao Tome and Principe',
+  'Saudi Arabia',
+  'Senegal',
+  'Serbia',
+  'Seychelles',
+  'Sierra Leone',
+  'Singapore',
+  'Slovakia',
+  'Slovenia',
+  'Solomon Islands',
+  'Somalia',
+  'South Africa',
+  'South Korea',
+  'South Sudan',
+  'Spain',
+  'Sri Lanka',
+  'Sudan',
+  'Suriname',
+  'Sweden',
+  'Switzerland',
+  'Syria',
+  'Taiwan',
+  'Tajikistan',
+  'Tanzania',
+  'Thailand',
+  'Timor-Leste',
+  'Togo',
+  'Tonga',
+  'Trinidad and Tobago',
+  'Tunisia',
+  'Turkey',
+  'Turkmenistan',
+  'Tuvalu',
+  'Uganda',
+  'Ukraine',
+  'United Arab Emirates',
+  'United Kingdom',
+  'United States',
+  'Uruguay',
+  'Uzbekistan',
+  'Vanuatu',
+  'Vatican City',
+  'Venezuela',
+  'Vietnam',
+  'Yemen',
+  'Zambia',
+  'Zimbabwe',
+].sort((a, b) => a.localeCompare(b));
+
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
@@ -26,13 +226,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [primaryLanguage, setPrimaryLanguage] = useState('English');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
+  const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(
+    null
+  );
 
   if (!isOpen) return null;
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
     if (!email || !password) {
       setError('Please enter your email and password.');
       return;
@@ -52,12 +255,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
     if (!firstName || !lastName || !email || !password) {
       setError('Please fill out all required fields.');
       return;
     }
 
     setLoading(true);
+
     const res = await register({
       firstName,
       lastName,
@@ -66,10 +271,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       country,
       primaryLanguage,
     });
+
     setLoading(false);
 
     if (res.success) {
       setRegSuccessMessage(res.message);
+
       setTimeout(() => {
         onClose();
       }, 1200);
@@ -88,11 +295,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="px-6 pt-6 pb-4 border-b border-slate-200 flex items-center justify-between bg-white">
           <div className="flex items-center gap-2.5">
             <LogoIcon size={32} />
+
             <div>
-              <h3 className="font-bold text-slate-900 leading-tight">Nexora Workforce</h3>
-              <p className="text-xs text-slate-500 font-medium">Global AI Data & Language Platform</p>
+              <h3 className="font-bold text-slate-900 leading-tight">
+                Nexora Workforce
+              </h3>
+
+              <p className="text-xs text-slate-500 font-medium">
+                Global AI Data & Language Platform
+              </p>
             </div>
           </div>
+
           <button
             onClick={onClose}
             className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
@@ -101,15 +315,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </div>
 
-        {/* Success notification if registered */}
+        {/* Success notification */}
         {regSuccessMessage ? (
           <div className="p-8 text-center bg-white">
             <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle2 className="w-7 h-7" />
             </div>
-            <h4 className="text-lg font-bold text-slate-900 mb-1">Registration Successful</h4>
-            <p className="text-sm text-slate-600 mb-4">{regSuccessMessage}</p>
-            <p className="text-xs text-slate-500 font-medium">Opening your dashboard...</p>
+
+            <h4 className="text-lg font-bold text-slate-900 mb-1">
+              Registration Successful
+            </h4>
+
+            <p className="text-sm text-slate-600 mb-4">
+              {regSuccessMessage}
+            </p>
+
+            <p className="text-xs text-slate-500 font-medium">
+              Opening your dashboard...
+            </p>
           </div>
         ) : (
           <div className="p-6 bg-white">
@@ -120,14 +343,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
 
             {mode === 'login' ? (
-              /* UNIFIED LOGIN: ONLY Email, Password, and [LOGIN] */
+              /* LOGIN */
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-800 mb-1.5">
                     Email
                   </label>
+
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+
                     <input
                       type="email"
                       required
@@ -143,8 +368,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="block text-xs font-semibold text-slate-800 mb-1.5">
                     Password
                   </label>
+
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+
                     <input
                       type="password"
                       required
@@ -167,6 +394,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <div className="pt-4 border-t border-slate-100 text-center">
                   <p className="text-xs text-slate-600">
                     Don't have an account?{' '}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -181,12 +409,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </form>
             ) : (
+              /* REGISTER */
               <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-800 mb-1">
                       First Name *
                     </label>
+
                     <input
                       type="text"
                       required
@@ -196,10 +426,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       className="w-full px-3 py-2 text-sm text-slate-900 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 shadow-xs"
                     />
                   </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-slate-800 mb-1">
                       Last Name *
                     </label>
+
                     <input
                       type="text"
                       required
@@ -215,6 +447,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="block text-xs font-semibold text-slate-800 mb-1">
                     Email Address *
                   </label>
+
                   <input
                     type="email"
                     required
@@ -229,6 +462,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="block text-xs font-semibold text-slate-800 mb-1">
                     Password *
                   </label>
+
                   <input
                     type="password"
                     required
@@ -244,28 +478,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <label className="block text-xs font-semibold text-slate-800 mb-1">
                       Country
                     </label>
+
                     <select
                       value={country}
                       onChange={(e) => setCountry(e.target.value)}
                       className="w-full px-3 py-2 text-xs text-slate-900 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 shadow-xs"
                     >
-                      <option>United States</option>
-                      <option>United Kingdom</option>
-                      <option>Germany</option>
-                      <option>Pakistan</option>
-                      <option>Egypt</option>
-                      <option>Saudi Arabia</option>
-                      <option>United Arab Emirates</option>
-                      <option>Canada</option>
-                      <option>France</option>
-                      <option>India</option>
-                      <option>Japan</option>
+                      {COUNTRIES.map((countryName) => (
+                        <option key={countryName} value={countryName}>
+                          {countryName}
+                        </option>
+                      ))}
                     </select>
                   </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-slate-800 mb-1">
                       Primary Language
                     </label>
+
                     <input
                       type="text"
                       placeholder="Arabic / English"
@@ -283,6 +514,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {loading ? 'Creating Account...' : 'Register'}
+
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -290,6 +522,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <div className="pt-4 border-t border-slate-100 text-center">
                   <p className="text-xs text-slate-600">
                     Already have an account?{' '}
+
                     <button
                       type="button"
                       onClick={() => {
