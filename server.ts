@@ -11,11 +11,6 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-/*
- * IMPORTANT:
- * Use the PORT provided by the hosting platform.
- * Locally it will fall back to 3000.
- */
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
@@ -96,19 +91,13 @@ function loadJsonFile<T>(filename: string, defaultValue: T): T {
       return JSON.parse(content);
     }
   } catch (e) {
-    console.warn(
-      `Error reading ${filename}, using default`,
-      e
-    );
+    console.warn(`Error reading ${filename}, using default`, e);
   }
 
   return defaultValue;
 }
 
-function saveJsonFile<T>(
-  filename: string,
-  data: T
-): void {
+function saveJsonFile<T>(filename: string, data: T): void {
   try {
     const filePath = path.join(DATA_DIR, filename);
 
@@ -118,10 +107,7 @@ function saveJsonFile<T>(
       'utf-8'
     );
   } catch (e) {
-    console.error(
-      `Error writing ${filename}`,
-      e
-    );
+    console.error(`Error writing ${filename}`, e);
   }
 }
 
@@ -175,41 +161,33 @@ const DEFAULT_PROJECTS = [
 
 // =================== IN-MEMORY STORES ===================
 
-let registeredUsers: StoredUser[] =
-  loadJsonFile<StoredUser[]>(
-    'users.json',
-    DEFAULT_USERS
-  ).filter(
-    (u) =>
-      u.id !== 'usr-demo-01' &&
-      u.email.toLowerCase() !==
-        'contributor@nexora.work' &&
-      !u.email.toLowerCase().includes('demo') &&
-      !u.email.toLowerCase().includes('temp')
-  );
-
-saveJsonFile(
+let registeredUsers: StoredUser[] = loadJsonFile<StoredUser[]>(
   'users.json',
-  registeredUsers
+  DEFAULT_USERS
+).filter(
+  (u) =>
+    u.id !== 'usr-demo-01' &&
+    u.email.toLowerCase() !== 'contributor@nexora.work' &&
+    !u.email.toLowerCase().includes('demo') &&
+    !u.email.toLowerCase().includes('temp')
 );
 
-let projectsStore: any[] =
-  loadJsonFile<any[]>(
-    'projects.json',
-    DEFAULT_PROJECTS
-  );
+saveJsonFile('users.json', registeredUsers);
 
-let applicationsStore: any[] =
-  loadJsonFile<any[]>(
-    'applications.json',
-    []
-  );
+let projectsStore: any[] = loadJsonFile<any[]>(
+  'projects.json',
+  DEFAULT_PROJECTS
+);
 
-let updatesStore: any[] =
-  loadJsonFile<any[]>(
-    'updates.json',
-    []
-  );
+let applicationsStore: any[] = loadJsonFile<any[]>(
+  'applications.json',
+  []
+);
+
+let updatesStore: any[] = loadJsonFile<any[]>(
+  'updates.json',
+  []
+);
 
 // =================== HEALTH API ===================
 
@@ -222,25 +200,19 @@ app.get('/api/health', (_req, res) => {
 
 // =================== AUTH ===================
 
-// Unified Login Endpoint
 app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body || {};
 
   if (!email || !password) {
     return res.status(400).json({
       success: false,
-      message:
-        'Please provide both email and password.',
+      message: 'Please provide both email and password.',
     });
   }
 
-  const normalizedEmail = String(email)
-    .trim()
-    .toLowerCase();
-
+  const normalizedEmail = String(email).trim().toLowerCase();
   const inputPassword = String(password);
 
-  // 1. Check Admin Credentials
   if (
     isValidAdminEmail(normalizedEmail) &&
     isValidAdminPassword(inputPassword)
@@ -278,11 +250,9 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  // 2. Check Contributor Credentials
   const contributor = registeredUsers.find(
     (u) =>
-      u.email.toLowerCase() ===
-        normalizedEmail &&
+      u.email.toLowerCase() === normalizedEmail &&
       u.password === inputPassword
   );
 
@@ -295,10 +265,7 @@ app.post('/api/auth/login', (req, res) => {
       });
     }
 
-    const {
-      password: _,
-      ...safeUser
-    } = contributor;
+    const { password: _, ...safeUser } = contributor;
 
     return res.json({
       success: true,
@@ -313,7 +280,8 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-// Registration Endpoint
+// =================== REGISTRATION ===================
+
 app.post('/api/auth/register', (req, res) => {
   const {
     firstName,
@@ -327,12 +295,7 @@ app.post('/api/auth/register', (req, res) => {
     experience,
   } = req.body || {};
 
-  if (
-    !firstName ||
-    !lastName ||
-    !email ||
-    !password
-  ) {
+  if (!firstName || !lastName || !email || !password) {
     return res.status(400).json({
       success: false,
       message:
@@ -340,11 +303,8 @@ app.post('/api/auth/register', (req, res) => {
     });
   }
 
-  const normalizedEmail = String(email)
-    .trim()
-    .toLowerCase();
+  const normalizedEmail = String(email).trim().toLowerCase();
 
-  // Prevent registration using admin email
   if (isValidAdminEmail(normalizedEmail)) {
     return res.status(400).json({
       success: false,
@@ -353,12 +313,9 @@ app.post('/api/auth/register', (req, res) => {
     });
   }
 
-  // Prevent duplicate registration
   if (
     registeredUsers.some(
-      (u) =>
-        u.email.toLowerCase() ===
-        normalizedEmail
+      (u) => u.email.toLowerCase() === normalizedEmail
     )
   ) {
     return res.status(400).json({
@@ -369,79 +326,40 @@ app.post('/api/auth/register', (req, res) => {
   }
 
   const newUser: StoredUser = {
-    id: `usr-${Date.now()
-      .toString()
-      .slice(-5)}`,
-
+    id: `usr-${Date.now().toString().slice(-5)}`,
     firstName: String(firstName).trim(),
-
     lastName: String(lastName).trim(),
-
     email: normalizedEmail,
-
     password: String(password),
-
-    phone: phone
-      ? String(phone).trim()
-      : '',
-
-    country:
-      country || 'United States',
-
+    phone: phone ? String(phone).trim() : '',
+    country: country || 'United States',
     languages: primaryLanguage
       ? [String(primaryLanguage).trim()]
       : ['English'],
-
     languageProficiency: {
-      [primaryLanguage || 'English']:
-        'Native / Fluent',
+      [primaryLanguage || 'English']: 'Native / Fluent',
     },
-
     skills:
-      Array.isArray(skills) &&
-      skills.length > 0
+      Array.isArray(skills) && skills.length > 0
         ? skills
         : ['Translation & Localization'],
-
     experience:
-      experience ||
-      'Independent Contributor & Linguist',
-
+      experience || 'Independent Contributor & Linguist',
     role: 'contributor',
-
     isEmailVerified: false,
-
     profileStatus: 'Incomplete',
-
     avatar:
-      (
-        String(firstName)[0] ||
-        'U'
-      ).toUpperCase() +
-      (
-        String(lastName)[0] ||
-        'C'
-      ).toUpperCase(),
-
+      (String(firstName)[0] || 'U').toUpperCase() +
+      (String(lastName)[0] || 'C').toUpperCase(),
     status: 'active',
-
-    createdAt:
-      new Date()
-        .toISOString()
-        .split('T')[0],
+    createdAt: new Date().toISOString().split('T')[0],
   };
 
   registeredUsers.push(newUser);
 
-  saveJsonFile(
-    'users.json',
-    registeredUsers
-  );
+  saveJsonFile('users.json', registeredUsers);
 
-  const {
-    password: _,
-    ...safeUser
-  } = newUser;
+  const { password: _, ...safeUser } = newUser;
 
   return res.json({
     success: true,
@@ -453,12 +371,10 @@ app.post('/api/auth/register', (req, res) => {
 
 // =================== USERS API ===================
 
-// User directory for admin management
 app.get('/api/users', (_req, res) => {
-  const safeUsers =
-    registeredUsers.map(
-      ({ password: _, ...u }) => u
-    );
+  const safeUsers = registeredUsers.map(
+    ({ password: _, ...u }) => u
+  );
 
   res.json({
     success: true,
@@ -466,155 +382,98 @@ app.get('/api/users', (_req, res) => {
   });
 });
 
-// Toggle user status
-app.patch(
-  '/api/users/:id/status',
-  (req, res) => {
-    const { id } = req.params;
+app.patch('/api/users/:id/status', (req, res) => {
+  const { id } = req.params;
 
-    const user =
-      registeredUsers.find(
-        (u) => u.id === id
-      );
+  const user = registeredUsers.find((u) => u.id === id);
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found.',
-      });
-    }
-
-    user.status =
-      user.status === 'active'
-        ? 'suspended'
-        : 'active';
-
-    saveJsonFile(
-      'users.json',
-      registeredUsers
-    );
-
-    const {
-      password: _,
-      ...safeUser
-    } = user;
-
-    res.json({
-      success: true,
-      user: safeUser,
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found.',
     });
   }
-);
 
-// Toggle email verification
-app.patch(
-  '/api/users/:id/verify-email',
-  (req, res) => {
-    const { id } = req.params;
+  user.status =
+    user.status === 'active' ? 'suspended' : 'active';
 
-    const user =
-      registeredUsers.find(
-        (u) => u.id === id
-      );
+  saveJsonFile('users.json', registeredUsers);
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found.',
-      });
-    }
+  const { password: _, ...safeUser } = user;
 
-    user.isEmailVerified =
-      !user.isEmailVerified;
+  res.json({
+    success: true,
+    user: safeUser,
+  });
+});
 
-    user.profileStatus =
-      user.isEmailVerified
-        ? 'Complete'
-        : 'Incomplete';
+app.patch('/api/users/:id/verify-email', (req, res) => {
+  const { id } = req.params;
 
-    saveJsonFile(
-      'users.json',
-      registeredUsers
-    );
+  const user = registeredUsers.find((u) => u.id === id);
 
-    const {
-      password: _,
-      ...safeUser
-    } = user;
-
-    res.json({
-      success: true,
-      user: safeUser,
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found.',
     });
   }
-);
 
-// Delete user
-app.delete(
-  '/api/users/:id',
-  (req, res) => {
-    const { id } = req.params;
+  user.isEmailVerified = !user.isEmailVerified;
 
-    registeredUsers =
-      registeredUsers.filter(
-        (u) => u.id !== id
-      );
+  user.profileStatus = user.isEmailVerified
+    ? 'Complete'
+    : 'Incomplete';
 
-    saveJsonFile(
-      'users.json',
-      registeredUsers
-    );
+  saveJsonFile('users.json', registeredUsers);
 
-    applicationsStore =
-      applicationsStore.filter(
-        (a) => a.userId !== id
-      );
+  const { password: _, ...safeUser } = user;
 
-    saveJsonFile(
-      'applications.json',
-      applicationsStore
-    );
+  res.json({
+    success: true,
+    user: safeUser,
+  });
+});
 
-    res.json({
-      success: true,
-      message:
-        'User deleted successfully.',
-    });
-  }
-);
+app.delete('/api/users/:id', (req, res) => {
+  const { id } = req.params;
 
-// Purge temporary / demo accounts
-app.post(
-  '/api/users/purge-temp',
-  (_req, res) => {
-    registeredUsers =
-      registeredUsers.filter(
-        (u) =>
-          u.id !== 'usr-demo-01' &&
-          u.email.toLowerCase() !==
-            'contributor@nexora.work' &&
-          !u.email
-            .toLowerCase()
-            .includes('demo') &&
-          !u.email
-            .toLowerCase()
-            .includes('temp')
-      );
+  registeredUsers = registeredUsers.filter(
+    (u) => u.id !== id
+  );
 
-    saveJsonFile(
-      'users.json',
-      registeredUsers
-    );
+  saveJsonFile('users.json', registeredUsers);
 
-    res.json({
-      success: true,
-      count:
-        registeredUsers.length,
-      message:
-        'Temporary users removed.',
-    });
-  }
-);
+  applicationsStore = applicationsStore.filter(
+    (a) => a.userId !== id
+  );
+
+  saveJsonFile('applications.json', applicationsStore);
+
+  res.json({
+    success: true,
+    message: 'User deleted successfully.',
+  });
+});
+
+app.post('/api/users/purge-temp', (_req, res) => {
+  registeredUsers = registeredUsers.filter(
+    (u) =>
+      u.id !== 'usr-demo-01' &&
+      u.email.toLowerCase() !==
+        'contributor@nexora.work' &&
+      !u.email.toLowerCase().includes('demo') &&
+      !u.email.toLowerCase().includes('temp')
+  );
+
+  saveJsonFile('users.json', registeredUsers);
+
+  res.json({
+    success: true,
+    count: registeredUsers.length,
+    message: 'Temporary users removed.',
+  });
+});
 
 // =================== PROJECTS API ===================
 
@@ -626,38 +485,23 @@ app.get('/api/projects', (_req, res) => {
 });
 
 app.post('/api/projects', (req, res) => {
-  const projectData =
-    req.body;
+  const projectData = req.body;
 
   const newProject = {
     ...projectData,
-
     id:
       projectData.id ||
-      `proj-${Date.now()
-        .toString()
-        .slice(-5)}`,
-
+      `proj-${Date.now().toString().slice(-5)}`,
     approvedContributors:
-      projectData.approvedContributors ||
-      0,
-
+      projectData.approvedContributors || 0,
     createdAt:
       projectData.createdAt ||
-      new Date()
-        .toISOString()
-        .split('T')[0],
+      new Date().toISOString().split('T')[0],
   };
 
-  projectsStore = [
-    newProject,
-    ...projectsStore,
-  ];
+  projectsStore = [newProject, ...projectsStore];
 
-  saveJsonFile(
-    'projects.json',
-    projectsStore
-  );
+  saveJsonFile('projects.json', projectsStore);
 
   res.json({
     success: true,
@@ -665,453 +509,267 @@ app.post('/api/projects', (req, res) => {
   });
 });
 
-app.put(
-  '/api/projects/:id',
-  (req, res) => {
-    const { id } =
-      req.params;
+app.put('/api/projects/:id', (req, res) => {
+  const { id } = req.params;
+  const updateData = req.body;
 
-    const updateData =
-      req.body;
+  const idx = projectsStore.findIndex((p) => p.id === id);
 
-    const idx =
-      projectsStore.findIndex(
-        (p) => p.id === id
-      );
-
-    if (idx === -1) {
-      return res.status(404).json({
-        success: false,
-        message:
-          'Project not found.',
-      });
-    }
-
-    projectsStore[idx] = {
-      ...projectsStore[idx],
-      ...updateData,
-    };
-
-    saveJsonFile(
-      'projects.json',
-      projectsStore
-    );
-
-    res.json({
-      success: true,
-      project:
-        projectsStore[idx],
+  if (idx === -1) {
+    return res.status(404).json({
+      success: false,
+      message: 'Project not found.',
     });
   }
-);
 
-app.patch(
-  '/api/projects/:id/status',
-  (req, res) => {
-    const { id } =
-      req.params;
+  projectsStore[idx] = {
+    ...projectsStore[idx],
+    ...updateData,
+  };
 
-    const { status } =
-      req.body;
+  saveJsonFile('projects.json', projectsStore);
 
-    const idx =
-      projectsStore.findIndex(
-        (p) => p.id === id
-      );
+  res.json({
+    success: true,
+    project: projectsStore[idx],
+  });
+});
 
-    if (idx === -1) {
-      return res.status(404).json({
-        success: false,
-        message:
-          'Project not found.',
-      });
-    }
+app.patch('/api/projects/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
 
-    projectsStore[idx].status =
-      status;
+  const idx = projectsStore.findIndex((p) => p.id === id);
 
-    saveJsonFile(
-      'projects.json',
-      projectsStore
-    );
-
-    res.json({
-      success: true,
-      project:
-        projectsStore[idx],
+  if (idx === -1) {
+    return res.status(404).json({
+      success: false,
+      message: 'Project not found.',
     });
   }
-);
 
-app.delete(
-  '/api/projects/:id',
-  (req, res) => {
-    const { id } =
-      req.params;
+  projectsStore[idx].status = status;
 
-    projectsStore =
-      projectsStore.filter(
-        (p) => p.id !== id
-      );
+  saveJsonFile('projects.json', projectsStore);
 
-    saveJsonFile(
-      'projects.json',
-      projectsStore
-    );
+  res.json({
+    success: true,
+    project: projectsStore[idx],
+  });
+});
 
-    applicationsStore =
-      applicationsStore.filter(
-        (a) => a.projectId !== id
-      );
+app.delete('/api/projects/:id', (req, res) => {
+  const { id } = req.params;
 
-    saveJsonFile(
-      'applications.json',
-      applicationsStore
-    );
+  projectsStore = projectsStore.filter(
+    (p) => p.id !== id
+  );
 
-    updatesStore =
-      updatesStore.filter(
-        (u) => u.projectId !== id
-      );
+  saveJsonFile('projects.json', projectsStore);
 
-    saveJsonFile(
-      'updates.json',
-      updatesStore
-    );
+  applicationsStore = applicationsStore.filter(
+    (a) => a.projectId !== id
+  );
 
-    res.json({
-      success: true,
-      message:
-        'Project deleted successfully.',
-    });
-  }
-);
+  saveJsonFile('applications.json', applicationsStore);
+
+  updatesStore = updatesStore.filter(
+    (u) => u.projectId !== id
+  );
+
+  saveJsonFile('updates.json', updatesStore);
+
+  res.json({
+    success: true,
+    message: 'Project deleted successfully.',
+  });
+});
 
 // =================== APPLICATIONS API ===================
 
-app.get(
-  '/api/applications',
-  (_req, res) => {
-    res.json({
-      success: true,
-      applications:
-        applicationsStore,
+app.get('/api/applications', (_req, res) => {
+  res.json({
+    success: true,
+    applications: applicationsStore,
+  });
+});
+
+app.post('/api/applications', (req, res) => {
+  const appData = req.body;
+
+  const newApp = {
+    ...appData,
+    id:
+      appData.id ||
+      `app-${Date.now().toString().slice(-4)}`,
+    appliedDate:
+      appData.appliedDate ||
+      new Date().toISOString().split('T')[0],
+  };
+
+  applicationsStore = [newApp, ...applicationsStore];
+
+  saveJsonFile('applications.json', applicationsStore);
+
+  res.json({
+    success: true,
+    application: newApp,
+  });
+});
+
+app.patch('/api/applications/:id', (req, res) => {
+  const { id } = req.params;
+  const { status, notes } = req.body;
+
+  const idx = applicationsStore.findIndex(
+    (a) => a.id === id
+  );
+
+  if (idx === -1) {
+    return res.status(404).json({
+      success: false,
+      message: 'Application not found.',
     });
   }
-);
 
-app.post(
-  '/api/applications',
-  (req, res) => {
-    const appData =
-      req.body;
+  applicationsStore[idx] = {
+    ...applicationsStore[idx],
+    status:
+      status || applicationsStore[idx].status,
+    notes:
+      notes !== undefined
+        ? notes
+        : applicationsStore[idx].notes,
+    reviewedDate: new Date()
+      .toISOString()
+      .split('T')[0],
+  };
 
-    const newApp = {
-      ...appData,
+  saveJsonFile('applications.json', applicationsStore);
 
-      id:
-        appData.id ||
-        `app-${Date.now()
-          .toString()
-          .slice(-4)}`,
-
-      appliedDate:
-        appData.appliedDate ||
-        new Date()
-          .toISOString()
-          .split('T')[0],
-    };
-
-    applicationsStore = [
-      newApp,
-      ...applicationsStore,
-    ];
-
-    saveJsonFile(
-      'applications.json',
-      applicationsStore
-    );
-
-    res.json({
-      success: true,
-      application: newApp,
-    });
-  }
-);
-
-app.patch(
-  '/api/applications/:id',
-  (req, res) => {
-    const { id } =
-      req.params;
-
-    const {
-      status,
-      notes,
-    } = req.body;
-
-    const idx =
-      applicationsStore.findIndex(
-        (a) => a.id === id
-      );
-
-    if (idx === -1) {
-      return res.status(404).json({
-        success: false,
-        message:
-          'Application not found.',
-      });
-    }
-
-    applicationsStore[idx] = {
-      ...applicationsStore[idx],
-
-      status:
-        status ||
-        applicationsStore[idx]
-          .status,
-
-      notes:
-        notes !== undefined
-          ? notes
-          : applicationsStore[idx]
-              .notes,
-
-      reviewedDate:
-        new Date()
-          .toISOString()
-          .split('T')[0],
-    };
-
-    saveJsonFile(
-      'applications.json',
-      applicationsStore
-    );
-
-    res.json({
-      success: true,
-      application:
-        applicationsStore[idx],
-    });
-  }
-);
+  res.json({
+    success: true,
+    application: applicationsStore[idx],
+  });
+});
 
 // =================== PROJECT UPDATES API ===================
 
-app.get(
-  '/api/project-updates',
-  (_req, res) => {
-    res.json({
-      success: true,
-      updates:
-        updatesStore,
-    });
-  }
-);
+app.get('/api/project-updates', (_req, res) => {
+  res.json({
+    success: true,
+    updates: updatesStore,
+  });
+});
 
-app.post(
-  '/api/project-updates',
-  (req, res) => {
-    const updateData =
-      req.body;
+app.post('/api/project-updates', (req, res) => {
+  const updateData = req.body;
 
-    const newUpdate = {
-      ...updateData,
+  const newUpdate = {
+    ...updateData,
+    id:
+      updateData.id ||
+      `upd-${Date.now().toString().slice(-4)}`,
+    createdAt: new Date().toISOString(),
+    readByUserIds: updateData.readByUserIds || [],
+  };
 
-      id:
-        updateData.id ||
-        `upd-${Date.now()
-          .toString()
-          .slice(-4)}`,
+  updatesStore = [newUpdate, ...updatesStore];
 
-      createdAt:
-        new Date().toISOString(),
+  saveJsonFile('updates.json', updatesStore);
 
-      readByUserIds:
-        updateData.readByUserIds ||
-        [],
-    };
+  res.json({
+    success: true,
+    update: newUpdate,
+  });
+});
 
-    updatesStore = [
-      newUpdate,
-      ...updatesStore,
-    ];
+app.delete('/api/project-updates/:id', (req, res) => {
+  const { id } = req.params;
 
-    saveJsonFile(
-      'updates.json',
-      updatesStore
-    );
+  updatesStore = updatesStore.filter(
+    (u) => u.id !== id
+  );
 
-    res.json({
-      success: true,
-      update: newUpdate,
-    });
-  }
-);
+  saveJsonFile('updates.json', updatesStore);
 
-app.delete(
-  '/api/project-updates/:id',
-  (req, res) => {
-    const { id } =
-      req.params;
-
-    updatesStore =
-      updatesStore.filter(
-        (u) => u.id !== id
-      );
-
-    saveJsonFile(
-      'updates.json',
-      updatesStore
-    );
-
-    res.json({
-      success: true,
-      message:
-        'Update deleted.',
-    });
-  }
-);
+  res.json({
+    success: true,
+    message: 'Update deleted.',
+  });
+});
 
 // =================== RESET API ===================
 
-app.post(
-  '/api/reset',
-  (_req, res) => {
-    projectsStore = [
-      ...DEFAULT_PROJECTS,
-    ];
+app.post('/api/reset', (_req, res) => {
+  projectsStore = [...DEFAULT_PROJECTS];
+  registeredUsers = [...DEFAULT_USERS];
+  applicationsStore = [];
+  updatesStore = [];
 
-    registeredUsers = [
-      ...DEFAULT_USERS,
-    ];
+  saveJsonFile('projects.json', projectsStore);
+  saveJsonFile('users.json', registeredUsers);
+  saveJsonFile('applications.json', applicationsStore);
+  saveJsonFile('updates.json', updatesStore);
 
-    applicationsStore = [];
+  res.json({
+    success: true,
+    message: 'Platform reset to seed data.',
+  });
+});
 
-    updatesStore = [];
-
-    saveJsonFile(
-      'projects.json',
-      projectsStore
-    );
-
-    saveJsonFile(
-      'users.json',
-      registeredUsers
-    );
-
-    saveJsonFile(
-      'applications.json',
-      applicationsStore
-    );
-
-    saveJsonFile(
-      'updates.json',
-      updatesStore
-    );
-
-    res.json({
-      success: true,
-      message:
-        'Platform reset to seed data.',
-    });
-  }
-);
-
-// =================== STATIC / VITE ===================
+// =================== PRODUCTION STATIC ===================
 
 function configureProductionStatic() {
-  // Serve public folder
-  app.use(
-    express.static(
-      path.join(
-        process.cwd(),
-        'public'
-      )
-    )
+  const distPath = path.join(process.cwd(), 'dist');
+
+  console.log('Frontend dist path:', distPath);
+  console.log(
+    'Frontend index exists:',
+    fs.existsSync(path.join(distPath, 'index.html'))
   );
 
-  // Serve Vite production build
-  const distPath = path.join(
-    process.cwd(),
-    'dist'
-  );
+  app.use(express.static(distPath));
 
-  app.use(
-    express.static(distPath)
-  );
+  // Only handle non-API routes with the SPA fallback.
+  app.get(/^\/(?!api(?:\/|$)).*/, (_req, res) => {
+    const indexPath = path.join(distPath, 'index.html');
 
-  // SPA fallback
-  app.get('*', (_req, res) => {
-    res.sendFile(
-      path.join(
-        distPath,
-        'index.html'
-      )
-    );
+    if (!fs.existsSync(indexPath)) {
+      return res.status(500).send(
+        'Frontend build not found: dist/index.html'
+      );
+    }
+
+    return res.sendFile(indexPath);
   });
 }
 
 // =================== ENVIRONMENT ===================
 
-if (
-  process.env.NODE_ENV ===
-  'production'
-) {
-  /*
-   * IMPORTANT:
-   * Do NOT import Vite in production.
-   *
-   * Vite uses Rollup internally.
-   * Loading Vite inside the Vercel
-   * serverless function was causing:
-   *
-   * Cannot find module
-   * @rollup/rollup-linux-x64-gnu
-   *
-   * Production only needs the
-   * already-built dist folder.
-   */
-
+if (process.env.NODE_ENV === 'production') {
   configureProductionStatic();
 } else {
-  /*
-   * Development only:
-   * Dynamically load Vite.
-   *
-   * This prevents Vite/Rollup from
-   * being loaded by the production
-   * Vercel function.
-   */
   (async () => {
     try {
       const {
-        createServer:
-          createViteServer,
+        createServer: createViteServer,
       } = await import('vite');
 
-      const vite =
-        await createViteServer({
-          server: {
-            middlewareMode: true,
-          },
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+        },
+        appType: 'spa',
+      });
 
-          appType: 'spa',
-        });
+      app.use(vite.middlewares);
 
-      app.use(
-        vite.middlewares
-      );
-
-      app.listen(
-        PORT,
-        '0.0.0.0',
-        () => {
-          console.log(
-            `Nexora Workforce development server running on port ${PORT}`
-          );
-        }
-      );
+      app.listen(PORT, '0.0.0.0', () => {
+        console.log(
+          `Nexora Workforce development server running on port ${PORT}`
+        );
+      });
     } catch (error) {
       console.error(
         'Failed to start development server:',
