@@ -109,7 +109,11 @@ export const AdminApprovedContributorsView: React.FC<AdminApprovedContributorsVi
                         <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
                         {app.userName}
                       </div>
-                      <div className="text-[10px] text-slate-400">{app.userEmail}</div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                        <span>{app.userEmail}</span>
+                        <span>•</span>
+                        <span className="text-slate-600 font-medium">{app.country || 'Global'}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-3.5 max-w-[220px]">
                       <div className="font-medium text-slate-800 truncate">{app.projectName}</div>

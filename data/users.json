@@ -1,1 +1,52 @@
-[]
+[
+  {
+    "id": "usr-99705",
+    "firstName": "Test",
+    "lastName": "User",
+    "email": "test@example.com",
+    "password": "password123",
+    "phone": "",
+    "country": "Pakistan",
+    "languages": [
+      "English"
+    ],
+    "languageProficiency": {
+      "English": "Native / Fluent"
+    },
+    "skills": [
+      "Translation & Localization"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "role": "contributor",
+    "isEmailVerified": false,
+    "profileStatus": "Incomplete",
+    "avatar": "TU",
+    "status": "active",
+    "createdAt": "2026-09-07"
+  },
+  {
+    "id": "usr-53126",
+    "firstName": "Ayan",
+    "lastName": "Khalid",
+    "email": "saimaanjum650@gmail.com",
+    "password": "Password123@",
+    "phone": "",
+    "country": "Pakistan",
+    "languages": [
+      "English"
+    ],
+    "languageProficiency": {
+      "English": "Native / Fluent"
+    },
+    "skills": [
+      "Translation & Localization"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "role": "contributor",
+    "isEmailVerified": false,
+    "profileStatus": "Incomplete",
+    "avatar": "AK",
+    "status": "active",
+    "createdAt": "2026-09-07"
+  }
+]

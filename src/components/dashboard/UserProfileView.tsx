@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { UploadedFileMeta } from '../../types';
 import { Badge } from '../common/Badge';
 import { ResumeUpload } from '../common/ResumeUpload';
+import { CountrySelect } from '../common/CountrySelect';
 import {
   User,
   Mail,
@@ -162,12 +163,11 @@ export const UserProfileView: React.FC = () => {
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Country of Residence
               </label>
-              <input
-                type="text"
-                required
+              <CountrySelect
                 value={country}
-                onChange={(e) => setCountry(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                onChange={setCountry}
+                placeholder="Select Country of Residence..."
+                required
               />
             </div>
             <div>

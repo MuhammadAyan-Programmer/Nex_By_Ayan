@@ -198,7 +198,11 @@ export const AdminApplicationsView: React.FC = () => {
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="font-semibold text-slate-900">{app.userName}</div>
-                        <div className="text-[10px] text-slate-400">{app.userEmail}</div>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                          <span>{app.userEmail}</span>
+                          <span>•</span>
+                          <span className="text-slate-600 font-medium">{app.country || 'Global'}</span>
+                        </div>
                       </td>
                       <td className="px-4 py-3.5 max-w-[200px]">
                         <div className="font-medium text-slate-800 truncate">{app.projectName}</div>
@@ -275,6 +279,10 @@ export const AdminApplicationsView: React.FC = () => {
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase">Email</span>
                     <span className="font-semibold text-slate-800">{activeApp.userEmail}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase">Country</span>
+                    <span className="font-semibold text-slate-800">{activeApp.country || 'Global'}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase">Applied Date</span>
