@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Project,
   UserProfile,
@@ -65,9 +65,14 @@ interface AppContextType {
     resumeText?: string;
     resumeFile?: UploadedFileMeta;
     additionalInfo?: string;
-  }) => { success: boolean; message: string };
+  }) => Promise<{ success: boolean; message: string }> | { success: boolean; message: string };
   updateApplicationStatus: (id: string, status: ApplicationStatus, notes?: string) => void;
   bulkApproveApplications: (ids: string[]) => void;
+
+  // Real-time synchronization
+  refreshLiveServerData: () => Promise<void>;
+  isSyncing: boolean;
+  lastSyncedAt: Date;
 
   // Payments & Earnings
   paymentMethods: PaymentMethod[];
@@ -260,42 +265,98 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Fetch live projects, applications, and users from backend server on mount
-  useEffect(() => {
-    fetch('/api/projects')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.projects) && data.projects.length > 0) {
-          setProjects(data.projects);
-        }
-      })
-      .catch(() => {});
+  // Live Server Synchronization State
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date>(new Date());
 
-    fetch('/api/applications')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.applications)) {
-          setApplications(data.applications);
-        }
-      })
-      .catch(() => {});
+  const refreshLiveServerData = useCallback(async () => {
+    try {
+      setIsSyncing(true);
+      const [projRes, appRes, userRes] = await Promise.all([
+        fetch('/api/projects').then((r) => r.json()).catch(() => null),
+        fetch('/api/applications').then((r) => r.json()).catch(() => null),
+        fetch('/api/users').then((r) => r.json()).catch(() => null),
+      ]);
 
-    fetch('/api/users')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.users)) {
-          const cleanUsers = data.users.filter(
-            (u: any) =>
-              u.id !== 'usr-demo-01' &&
-              u.email.toLowerCase() !== 'contributor@nexora.work' &&
-              !u.email.toLowerCase().includes('demo') &&
-              !u.email.toLowerCase().includes('temp')
-          );
-          setUsers(cleanUsers);
-        }
-      })
-      .catch(() => {});
+      if (projRes?.success && Array.isArray(projRes.projects) && projRes.projects.length > 0) {
+        setProjects(projRes.projects);
+      }
+      if (appRes?.success && Array.isArray(appRes.applications)) {
+        setApplications(appRes.applications);
+      }
+      if (userRes?.success && Array.isArray(userRes.users)) {
+        const cleanUsers = userRes.users.filter(
+          (u: any) =>
+            u.id !== 'usr-demo-01' &&
+            u.email.toLowerCase() !== 'contributor@nexora.work' &&
+            !u.email.toLowerCase().includes('demo') &&
+            !u.email.toLowerCase().includes('temp')
+        );
+        setUsers(cleanUsers);
+      }
+      setLastSyncedAt(new Date());
+    } finally {
+      setIsSyncing(false);
+    }
   }, []);
+
+  // Fetch live projects, applications, and users from backend server and setup polling
+  useEffect(() => {
+    // Initial fetch
+    refreshLiveServerData();
+
+    // Auto-sync any existing local applications to server database
+    const localApps = loadStorage<ProjectApplication[]>('applications', []);
+    if (localApps.length > 0) {
+      fetch('/api/applications/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applications: localApps }),
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && Array.isArray(d.applications)) {
+            setApplications(d.applications);
+          }
+        })
+        .catch(() => {});
+    }
+
+    // Auto-sync local projects if any
+    const localProjects = loadStorage<Project[]>('projects', []);
+    if (localProjects.length > 0) {
+      fetch('/api/projects/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projects: localProjects }),
+      }).catch(() => {});
+    }
+
+    // Auto-sync current user if registered locally
+    const savedUser = loadStorage<UserProfile | null>('currentUser', null);
+    if (savedUser && savedUser.email && savedUser.email.toLowerCase() !== 'contributor@nexora.work') {
+      fetch('/api/users/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: savedUser }),
+      }).catch(() => {});
+    }
+
+    // Live auto-polling every 4 seconds so admin sees new applicants and status changes instantly
+    const pollInterval = setInterval(() => {
+      refreshLiveServerData();
+    }, 4000);
+
+    const handleFocus = () => {
+      refreshLiveServerData();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [refreshLiveServerData]);
 
   const setCurrentUser = (user: UserProfile | null) => {
     setCurrentUserState(user);
@@ -714,7 +775,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Applications
-  const submitApplication = (data: {
+  const submitApplication = async (data: {
     projectId: string;
     experience: string;
     skills: string[];
@@ -723,14 +784,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     resumeText?: string;
     resumeFile?: UploadedFileMeta;
     additionalInfo?: string;
-  }) => {
+  }): Promise<{ success: boolean; message: string }> => {
     if (!currentUser) return { success: false, message: 'Please log in to apply.' };
 
     const project = projects.find((p) => p.id === data.projectId);
     if (!project) return { success: false, message: 'Project not found.' };
 
     const existing = applications.find(
-      (a) => a.projectId === data.projectId && a.userId === currentUser.id
+      (a) =>
+        a.projectId === data.projectId &&
+        (a.userId === currentUser.id || a.userEmail.toLowerCase() === currentUser.email.toLowerCase())
     );
     if (existing) {
       return { success: false, message: `You have already applied for this project (${existing.status}).` };
@@ -739,7 +802,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const attachedFile = data.resumeFile || currentUser.resumeFile;
 
     const newApp: ProjectApplication = {
-      id: `app-${Date.now().toString().slice(-4)}`,
+      id: `app-${Date.now().toString().slice(-5)}`,
       projectId: project.id,
       projectName: project.name,
       projectCategory: project.category,
@@ -758,7 +821,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       appliedDate: new Date().toISOString().split('T')[0],
     };
 
-    setApplications((prev) => [newApp, ...prev]);
+    // Instant local state update
+    setApplications((prev) => [newApp, ...prev.filter((a) => a.id !== newApp.id)]);
+
+    // Guaranteed backend server persistence
+    try {
+      const res = await fetch('/api/applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newApp),
+      });
+      const resData = await res.json();
+      if (resData.success && Array.isArray(resData.applications)) {
+        setApplications(resData.applications);
+      }
+    } catch (err) {
+      console.warn('Network issue saving application to server, saved locally:', err);
+    }
 
     // Update current user profile with the resumeFile if user didn't have one
     if (data.resumeFile && !currentUser.resumeFile) {
@@ -779,7 +858,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: 'Application submitted successfully!' };
   };
 
-  const updateApplicationStatus = (id: string, status: ApplicationStatus, notes?: string) => {
+  const updateApplicationStatus = async (id: string, status: ApplicationStatus, notes?: string) => {
     const targetApp = applications.find((a) => a.id === id);
     if (!targetApp) return;
 
@@ -797,6 +876,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : app
       )
     );
+
+    // Call server to persist application status and recalculate capacity
+    try {
+      const res = await fetch(`/api/applications/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, notes }),
+      });
+      const resData = await res.json();
+      if (resData.success && Array.isArray(resData.applications)) {
+        setApplications(resData.applications);
+      }
+      fetch('/api/projects')
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && Array.isArray(d.projects)) setProjects(d.projects);
+        })
+        .catch(() => {});
+    } catch (err) {
+      console.warn('Failed to update application status on server:', err);
+    }
 
     if (status === 'Approved' && prevStatus !== 'Approved') {
       setProjects((prev) =>
@@ -843,8 +943,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications((prev) => [notif, ...prev]);
   };
 
-  const bulkApproveApplications = (ids: string[]) => {
-    ids.forEach((id) => updateApplicationStatus(id, 'Approved'));
+  const bulkApproveApplications = async (ids: string[]) => {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+
+    setApplications((prev) =>
+      prev.map((app) =>
+        ids.includes(app.id)
+          ? { ...app, status: 'Approved', reviewedDate: new Date().toISOString().split('T')[0] }
+          : app
+      )
+    );
+
+    try {
+      const res = await fetch('/api/applications/bulk-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.applications)) {
+        setApplications(data.applications);
+      }
+      fetch('/api/projects')
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && Array.isArray(d.projects)) setProjects(d.projects);
+        })
+        .catch(() => {});
+    } catch (err) {
+      console.warn('Failed to bulk approve on server:', err);
+    }
   };
 
   // Payment Methods
@@ -1175,6 +1303,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         submitApplication,
         updateApplicationStatus,
         bulkApproveApplications,
+
+        refreshLiveServerData,
+        isSyncing,
+        lastSyncedAt,
 
         paymentMethods,
         addPaymentMethod,

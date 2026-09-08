@@ -9,8 +9,48 @@ import {
   NotificationItem,
 } from './types';
 
-// Real open project: Arabic → English Translation Project
+// Real active projects: French → English Machine Translation and Arabic → English Translation
 export const INITIAL_PROJECTS: Project[] = [
+  {
+    id: 'proj-french-en-002',
+    name: 'French → English Machine Translation Project',
+    category: 'Translation & Localization',
+    projectType: 'Translation / AI Data',
+    description:
+      'High-volume machine translation post-editing (MTPE), cultural localization, and linguistic quality assessment for French to English textual corpora, conversation logs, and domain-specific documentation. Contributors evaluate fluency, terminological accuracy, and grammatical precision.',
+    language: 'French',
+    sourceLanguage: 'French',
+    targetLanguage: 'English',
+    country: 'Global',
+    skillsRequired: [
+      'Bilingual French/English',
+      'Machine Translation Post-Editing (MTPE)',
+      'Localization QA',
+      'Context Evaluation',
+    ],
+    requiredContributors: 4000,
+    approvedContributors: 0,
+    startDate: '2026-09-05',
+    endDate: '2027-08-31',
+    applicationDeadline: '2026-11-30',
+    qualificationRequired: true,
+    qualificationTestInfo:
+      '15-minute French to English translation evaluation and terminology verification benchmark.',
+    minimumRequirement:
+      'Native or C1/C2 French proficiency with professional fluency in written English.',
+    instructions:
+      'Post-edit machine-translated French sentences into idiomatic, accurate English conforming to domain glossaries and quality rubrics.',
+    communityLink: 'https://community.nexora.work/c/french-english-translation',
+    announcement:
+      'The French → English Machine Translation Project is currently welcoming applications worldwide.',
+    status: 'Open',
+    paymentType: 'Per Item',
+    paymentRateType: 'range',
+    paymentAmountMin: 0.8,
+    paymentAmountMax: 3.0,
+    ratePay: '$0.80 - $3 / item',
+    createdAt: '2026-09-05',
+  },
   {
     id: 'proj-arabic-en-001',
     name: 'Arabic → English Translation Project',
@@ -29,7 +69,7 @@ export const INITIAL_PROJECTS: Project[] = [
       'Terminology Research',
       'Localization QA',
     ],
-    requiredContributors: 1500,
+    requiredContributors: 1200,
     approvedContributors: 0,
     startDate: '2026-09-15',
     endDate: '2027-06-30',
@@ -45,10 +85,11 @@ export const INITIAL_PROJECTS: Project[] = [
     announcement:
       'The Arabic → English Translation Project is officially open for applications. Complete your contributor profile and apply to schedule your qualification benchmark.',
     status: 'Open',
-    paymentType: 'Per Hour',
-    paymentRateType: 'fixed',
-    paymentAmount: 22.0,
-    ratePay: '$22.00 / hr',
+    paymentType: 'Per Item',
+    paymentRateType: 'range',
+    paymentAmountMin: 0.3,
+    paymentAmountMax: 0.7,
+    ratePay: '$0.30 - $0.70 / item',
     createdAt: '2026-09-01',
   },
 ];

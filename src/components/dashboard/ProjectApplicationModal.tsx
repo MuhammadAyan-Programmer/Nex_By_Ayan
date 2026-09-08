@@ -42,28 +42,33 @@ export const ProjectApplicationModal: React.FC<ProjectApplicationModalProps> = (
 
   if (!isOpen || !project || !currentUser) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
 
-    const res = submitApplication({
-      projectId: project.id,
-      experience,
-      skills: selectedSkills,
-      languages: selectedLanguages,
-      languageProficiency: proficiency,
-      resumeFile: resumeFile || undefined,
-      resumeText,
-      additionalInfo,
-    });
+    try {
+      const res = await submitApplication({
+        projectId: project.id,
+        experience,
+        skills: selectedSkills,
+        languages: selectedLanguages,
+        languageProficiency: proficiency,
+        resumeFile: resumeFile || undefined,
+        resumeText,
+        additionalInfo,
+      });
 
-    setIsSubmitting(false);
-    if (res.success) {
-      onSuccess();
-      onClose();
-    } else {
-      setError(res.message);
+      if (res.success) {
+        onSuccess();
+        onClose();
+      } else {
+        setError(res.message);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to submit application. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

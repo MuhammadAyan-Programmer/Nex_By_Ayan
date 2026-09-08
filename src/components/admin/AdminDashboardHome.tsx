@@ -14,6 +14,7 @@ import {
   ArrowRight,
   TrendingUp,
   ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AdminDashboardHomeProps {
@@ -25,7 +26,15 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
   onNavigate,
   onOpenCreateProject,
 }) => {
-  const { users, projects, applications, withdrawals } = useApp();
+  const {
+    users,
+    projects,
+    applications,
+    withdrawals,
+    refreshLiveServerData,
+    isSyncing,
+    lastSyncedAt,
+  } = useApp();
 
   // Statistics according to Section 31
   const totalUsers = users.length;
@@ -49,13 +58,28 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Admin Control Center</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-slate-900">Admin Control Center</h1>
+            <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live Server Synced
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Operational overview of contributors, global projects, seats capacity, and manual
-            payouts.
+            Operational overview of contributors, global projects, seats capacity, and manual payouts.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => refreshLiveServerData()}
+            disabled={isSyncing}
+            className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            title="Refresh statistics and all data from server"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-purple-600' : 'text-slate-500'}`} />
+            {isSyncing ? 'Syncing...' : 'Refresh All'}
+          </button>
           <button
             type="button"
             onClick={onOpenCreateProject}

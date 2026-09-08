@@ -91,6 +91,46 @@ const DEFAULT_USERS: StoredUser[] = [];
 
 const DEFAULT_PROJECTS = [
   {
+    id: 'proj-french-en-002',
+    name: 'French → English Machine Translation Project',
+    category: 'Translation & Localization',
+    projectType: 'Translation / AI Data',
+    description:
+      'High-volume machine translation post-editing (MTPE), cultural localization, and linguistic quality assessment for French to English textual corpora, conversation logs, and domain-specific documentation. Contributors evaluate fluency, terminological accuracy, and grammatical precision.',
+    language: 'French',
+    sourceLanguage: 'French',
+    targetLanguage: 'English',
+    country: 'Global',
+    skillsRequired: [
+      'Bilingual French/English',
+      'Machine Translation Post-Editing (MTPE)',
+      'Localization QA',
+      'Context Evaluation',
+    ],
+    requiredContributors: 4000,
+    approvedContributors: 0,
+    startDate: '2026-09-05',
+    endDate: '2027-08-31',
+    applicationDeadline: '2026-11-30',
+    qualificationRequired: true,
+    qualificationTestInfo:
+      '15-minute French to English translation evaluation and terminology verification benchmark.',
+    minimumRequirement:
+      'Native or C1/C2 French proficiency with professional fluency in written English.',
+    instructions:
+      'Post-edit machine-translated French sentences into idiomatic, accurate English conforming to domain glossaries and quality rubrics.',
+    communityLink: 'https://community.nexora.work/c/french-english-translation',
+    announcement:
+      'The French → English Machine Translation Project is currently welcoming applications worldwide.',
+    status: 'Open',
+    paymentType: 'Per Item',
+    paymentRateType: 'range',
+    paymentAmountMin: 0.8,
+    paymentAmountMax: 3.0,
+    ratePay: '$0.80 - $3 / item',
+    createdAt: '2026-09-05',
+  },
+  {
     id: 'proj-arabic-en-001',
     name: 'Arabic → English Translation Project',
     category: 'Translation & Localization',
@@ -108,7 +148,7 @@ const DEFAULT_PROJECTS = [
       'Terminology Research',
       'Localization QA',
     ],
-    requiredContributors: 1500,
+    requiredContributors: 1200,
     approvedContributors: 0,
     startDate: '2026-09-15',
     endDate: '2027-06-30',
@@ -124,10 +164,11 @@ const DEFAULT_PROJECTS = [
     announcement:
       'The Arabic → English Translation Project is officially open for applications. Complete your contributor profile and apply to schedule your qualification benchmark.',
     status: 'Open',
-    paymentType: 'Per Hour',
-    paymentRateType: 'fixed',
-    paymentAmount: 22.0,
-    ratePay: '$22.00 / hr',
+    paymentType: 'Per Item',
+    paymentRateType: 'range',
+    paymentAmountMin: 0.3,
+    paymentAmountMax: 0.7,
+    ratePay: '$0.30 - $0.70 / item',
     createdAt: '2026-09-01',
   },
 ];
@@ -141,9 +182,31 @@ let registeredUsers: StoredUser[] = loadJsonFile<StoredUser[]>('users.json', DEF
     !u.email.toLowerCase().includes('temp')
 );
 saveJsonFile('users.json', registeredUsers);
+
 let projectsStore: any[] = loadJsonFile<any[]>('projects.json', DEFAULT_PROJECTS);
 let applicationsStore: any[] = loadJsonFile<any[]>('applications.json', []);
 let updatesStore: any[] = loadJsonFile<any[]>('updates.json', []);
+
+function recalculateProjectCapacities() {
+  projectsStore = projectsStore.map((p) => {
+    const approvedCount = applicationsStore.filter(
+      (a) => a.projectId === p.id && a.status === 'Approved'
+    ).length;
+    const isFull = approvedCount >= p.requiredContributors;
+    return {
+      ...p,
+      approvedContributors: approvedCount,
+      status: isFull ? 'Closed' : p.status,
+    };
+  });
+  saveJsonFile('projects.json', projectsStore);
+}
+
+// Initial ensure on start
+saveJsonFile('projects.json', projectsStore);
+saveJsonFile('applications.json', applicationsStore);
+saveJsonFile('updates.json', updatesStore);
+recalculateProjectCapacities();
 
 // =================== API ROUTES ===================
 
@@ -323,6 +386,43 @@ app.get('/api/users', (_req, res) => {
   res.json({ success: true, users: safeUsers });
 });
 
+// Client-to-server users sync endpoint (ensures any locally registered users are saved)
+app.post('/api/users/sync', (req, res) => {
+  const { users: incomingUsers, user: singleUser } = req.body || {};
+  const list = Array.isArray(incomingUsers) ? incomingUsers : singleUser ? [singleUser] : [];
+  for (const u of list) {
+    if (!u || !u.email) continue;
+    const normEmail = String(u.email).trim().toLowerCase();
+    if (
+      normEmail === 'contributor@nexora.work' ||
+      u.id === 'usr-demo-01' ||
+      normEmail.includes('temp')
+    ) {
+      continue;
+    }
+    const idx = registeredUsers.findIndex(
+      (existing) => existing.email.toLowerCase() === normEmail || existing.id === u.id
+    );
+    if (idx !== -1) {
+      registeredUsers[idx] = {
+        ...registeredUsers[idx],
+        ...u,
+        email: normEmail,
+      };
+    } else {
+      registeredUsers.push({
+        ...u,
+        id: u.id || `usr-${Date.now().toString().slice(-5)}`,
+        email: normEmail,
+        createdAt: u.createdAt || new Date().toISOString().split('T')[0],
+      });
+    }
+  }
+  saveJsonFile('users.json', registeredUsers);
+  const safeUsers = registeredUsers.map(({ password: _, ...u }) => u);
+  res.json({ success: true, users: safeUsers });
+});
+
 // Toggle user status (suspend/activate)
 app.patch('/api/users/:id/status', (req, res) => {
   const { id } = req.params;
@@ -431,6 +531,31 @@ app.delete('/api/projects/:id', (req, res) => {
   res.json({ success: true, message: 'Project deleted successfully.' });
 });
 
+// Bulk sync projects from admin to server
+app.post('/api/projects/sync', (req, res) => {
+  const { projects: incomingProjects } = req.body || {};
+  if (Array.isArray(incomingProjects)) {
+    for (const proj of incomingProjects) {
+      if (!proj || !proj.name) continue;
+      const idx = projectsStore.findIndex(
+        (p) => p.id === proj.id || p.name.toLowerCase() === proj.name.toLowerCase()
+      );
+      if (idx !== -1) {
+        projectsStore[idx] = { ...projectsStore[idx], ...proj };
+      } else {
+        projectsStore.unshift({
+          ...proj,
+          id: proj.id || `proj-${Date.now().toString().slice(-5)}`,
+          approvedContributors: proj.approvedContributors || 0,
+          createdAt: proj.createdAt || new Date().toISOString().split('T')[0],
+        });
+      }
+    }
+    recalculateProjectCapacities();
+  }
+  res.json({ success: true, projects: projectsStore });
+});
+
 // =================== APPLICATIONS API ===================
 
 app.get('/api/applications', (_req, res) => {
@@ -439,14 +564,92 @@ app.get('/api/applications', (_req, res) => {
 
 app.post('/api/applications', (req, res) => {
   const appData = req.body;
+  if (!appData || !appData.projectId) {
+    return res.status(400).json({ success: false, message: 'Invalid application payload' });
+  }
+
+  const existingIdx = applicationsStore.findIndex(
+    (a) =>
+      a.id === appData.id ||
+      (a.projectId === appData.projectId &&
+        ((appData.userId && a.userId === appData.userId) ||
+          (appData.userEmail && a.userEmail?.toLowerCase() === appData.userEmail?.toLowerCase())))
+  );
+
   const newApp = {
     ...appData,
-    id: appData.id || `app-${Date.now().toString().slice(-4)}`,
+    id: appData.id || `app-${Date.now().toString().slice(-5)}`,
+    status: appData.status || 'Applied',
     appliedDate: appData.appliedDate || new Date().toISOString().split('T')[0],
   };
-  applicationsStore = [newApp, ...applicationsStore];
+
+  if (existingIdx !== -1) {
+    applicationsStore[existingIdx] = {
+      ...applicationsStore[existingIdx],
+      ...newApp,
+    };
+  } else {
+    applicationsStore = [newApp, ...applicationsStore];
+  }
+
   saveJsonFile('applications.json', applicationsStore);
-  res.json({ success: true, application: newApp });
+  recalculateProjectCapacities();
+  res.json({ success: true, application: newApp, applications: applicationsStore });
+});
+
+// Bulk sync applications from client localStorage to server database
+app.post('/api/applications/sync', (req, res) => {
+  const { applications: incomingApps } = req.body || {};
+  if (Array.isArray(incomingApps)) {
+    for (const app of incomingApps) {
+      if (!app || !app.projectId || (!app.userId && !app.userEmail)) continue;
+      const existingIdx = applicationsStore.findIndex(
+        (a) =>
+          a.id === app.id ||
+          (a.projectId === app.projectId &&
+            ((app.userId && a.userId === app.userId) ||
+              (app.userEmail && a.userEmail?.toLowerCase() === app.userEmail?.toLowerCase())))
+      );
+      if (existingIdx !== -1) {
+        applicationsStore[existingIdx] = {
+          ...app,
+          status: applicationsStore[existingIdx].status || app.status || 'Applied',
+          notes: applicationsStore[existingIdx].notes || app.notes,
+        };
+      } else {
+        applicationsStore.unshift({
+          ...app,
+          id: app.id || `app-${Date.now().toString().slice(-5)}-${Math.random().toString(36).slice(2, 6)}`,
+          status: app.status || 'Applied',
+          appliedDate: app.appliedDate || new Date().toISOString().split('T')[0],
+        });
+      }
+    }
+    saveJsonFile('applications.json', applicationsStore);
+    recalculateProjectCapacities();
+  }
+  res.json({ success: true, applications: applicationsStore });
+});
+
+// Bulk approve applications
+app.post('/api/applications/bulk-approve', (req, res) => {
+  const { ids } = req.body || {};
+  if (Array.isArray(ids) && ids.length > 0) {
+    const today = new Date().toISOString().split('T')[0];
+    applicationsStore = applicationsStore.map((app) => {
+      if (ids.includes(app.id)) {
+        return {
+          ...app,
+          status: 'Approved',
+          reviewedDate: today,
+        };
+      }
+      return app;
+    });
+    saveJsonFile('applications.json', applicationsStore);
+    recalculateProjectCapacities();
+  }
+  res.json({ success: true, applications: applicationsStore });
 });
 
 app.patch('/api/applications/:id', (req, res) => {
@@ -463,7 +666,8 @@ app.patch('/api/applications/:id', (req, res) => {
     reviewedDate: new Date().toISOString().split('T')[0],
   };
   saveJsonFile('applications.json', applicationsStore);
-  res.json({ success: true, application: applicationsStore[idx] });
+  recalculateProjectCapacities();
+  res.json({ success: true, application: applicationsStore[idx], applications: applicationsStore });
 });
 
 // =================== PROJECT UPDATES API ===================

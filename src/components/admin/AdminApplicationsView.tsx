@@ -17,10 +17,19 @@ import {
   X,
   Send,
   Download,
+  RefreshCw,
 } from 'lucide-react';
 
 export const AdminApplicationsView: React.FC = () => {
-  const { applications, projects, updateApplicationStatus, bulkApproveApplications } = useApp();
+  const {
+    applications,
+    projects,
+    updateApplicationStatus,
+    bulkApproveApplications,
+    refreshLiveServerData,
+    isSyncing,
+    lastSyncedAt,
+  } = useApp();
 
   const [search, setSearch] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL');
@@ -30,6 +39,11 @@ export const AdminApplicationsView: React.FC = () => {
   // Detailed Review Modal
   const [activeApp, setActiveApp] = useState<Application | null>(null);
   const [reviewNotes, setReviewNotes] = useState('');
+
+  const totalCount = applications.length;
+  const pendingCount = applications.filter((a) => a.status === 'Applied' || a.status === 'Under Review').length;
+  const approvedCount = applications.filter((a) => a.status === 'Approved').length;
+  const rejectedCount = applications.filter((a) => a.status === 'Rejected').length;
 
   const filteredApps = applications.filter((app) => {
     const matchSearch =
@@ -76,28 +90,66 @@ export const AdminApplicationsView: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Application Management</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-slate-900">Application Management</h1>
+            <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live Server Synced
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Review contributor qualification dossiers, language proficiencies, and adjudicate project
-            seats.
+            Review contributor qualification dossiers, language proficiencies, and adjudicate project seats. Auto-refreshing in real time.
           </p>
         </div>
 
-        {selectedAppIds.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-200">
-              {selectedAppIds.length} selected
-            </span>
-            <button
-              type="button"
-              onClick={handleBulkApprove}
-              className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Bulk Approve Selected
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {selectedAppIds.length > 0 && (
+            <div className="flex items-center gap-2 mr-2">
+              <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-200">
+                {selectedAppIds.length} selected
+              </span>
+              <button
+                type="button"
+                onClick={handleBulkApprove}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Bulk Approve Selected
+              </button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => refreshLiveServerData()}
+            disabled={isSyncing}
+            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            title="Force refresh applications from server"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-purple-600' : 'text-slate-500'}`} />
+            {isSyncing ? 'Syncing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {/* Summary KPI Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-[10px] uppercase font-bold text-slate-400">Total Applications</span>
+          <div className="text-xl font-extrabold text-slate-900 mt-0.5">{totalCount}</div>
+        </div>
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-[10px] uppercase font-bold text-amber-500">Pending Review</span>
+          <div className="text-xl font-extrabold text-amber-600 mt-0.5">{pendingCount}</div>
+        </div>
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-[10px] uppercase font-bold text-emerald-600">Approved Seats</span>
+          <div className="text-xl font-extrabold text-emerald-600 mt-0.5">{approvedCount}</div>
+        </div>
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-[10px] uppercase font-bold text-rose-500">Rejected</span>
+          <div className="text-xl font-extrabold text-rose-600 mt-0.5">{rejectedCount}</div>
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -170,8 +222,46 @@ export const AdminApplicationsView: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {filteredApps.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-8 text-center text-slate-400">
-                    No applications matching current filters.
+                  <td colSpan={7} className="px-5 py-12 text-center text-slate-500">
+                    <div className="max-w-md mx-auto flex flex-col items-center">
+                      <div className="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center mb-3">
+                        <FileCheck2 className="w-6 h-6" />
+                      </div>
+                      {applications.length === 0 ? (
+                        <>
+                          <h4 className="font-bold text-slate-800 text-sm mb-1">No Applications Yet</h4>
+                          <p className="text-xs text-slate-500 mb-4">
+                            When users from your community apply for projects, their applications will show up here automatically via real-time synchronization.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => refreshLiveServerData()}
+                            className="px-3.5 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                            Sync from Server
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <h4 className="font-bold text-slate-800 text-sm mb-1">No Applications Matching Filters</h4>
+                          <p className="text-xs text-slate-500 mb-4">
+                            Try adjusting your search query, project filter, or status filter.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearch('');
+                              setSelectedProjectId('ALL');
+                              setStatusFilter('ALL');
+                            }}
+                            className="px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                          >
+                            Reset Filters
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
