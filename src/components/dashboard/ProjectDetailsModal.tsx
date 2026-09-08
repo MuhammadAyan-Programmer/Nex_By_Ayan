@@ -27,14 +27,17 @@ interface ProjectDetailsModalProps {
 }
 
 export const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
-  project,
+  project: initialProject,
   isOpen,
   onClose,
   onApplyClick,
 }) => {
-  const { currentUser, applications } = useApp();
+  const { currentUser, applications, projects } = useApp();
 
-  if (!isOpen || !project) return null;
+  if (!isOpen || !initialProject) return null;
+
+  // Always use live project state from context if available
+  const project = projects.find((p) => p.id === initialProject.id) || initialProject;
 
   const remainingSeats = Math.max(0, project.requiredContributors - project.approvedContributors);
   const percentFilled = Math.min(
@@ -43,7 +46,12 @@ export const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
   );
 
   const userApplication = currentUser
-    ? applications.find((a) => a.projectId === project.id && a.userId === currentUser.id)
+    ? applications.find(
+        (a) =>
+          a.projectId === project.id &&
+          (a.userId === currentUser.id ||
+            (currentUser.email && a.userEmail?.toLowerCase() === currentUser.email.toLowerCase()))
+      )
     : null;
 
   return (

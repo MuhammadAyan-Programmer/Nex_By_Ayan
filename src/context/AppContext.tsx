@@ -118,19 +118,13 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Migration check: Purge any old fake demo data or temp users from previous sessions
-const CURRENT_DATA_VERSION = 'v3_no_temp_users';
+// Migration check: Purge any old cache to load fresh Egyptian workforce & live server data
+const CURRENT_DATA_VERSION = 'v4_egypt_workforce_sync';
 try {
   if (typeof window !== 'undefined' && localStorage.getItem('nexora_data_version') !== CURRENT_DATA_VERSION) {
     const keysToClean = [
-      'nexora_currentUser',
       'nexora_projects',
       'nexora_applications',
-      'nexora_paymentMethods',
-      'nexora_earnings',
-      'nexora_withdrawals',
-      'nexora_projectUpdates',
-      'nexora_notifications',
       'nexora_users',
     ];
     keysToClean.forEach((k) => localStorage.removeItem(k));
@@ -237,6 +231,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveStorage('withdrawals', withdrawals), [withdrawals]);
   useEffect(() => saveStorage('projectUpdates', projectUpdates), [projectUpdates]);
   useEffect(() => saveStorage('notifications', notifications), [notifications]);
+
+  // Real-time synchronization: keep project approved seats and capacity status synchronized with approved applications
+  useEffect(() => {
+    setProjects((prevProjects) => {
+      let changed = false;
+      const updated = prevProjects.map((p) => {
+        const approvedCount = applications.filter(
+          (a) => a.projectId === p.id && a.status === 'Approved'
+        ).length;
+        if (p.approvedContributors !== approvedCount) {
+          changed = true;
+          const isFull = approvedCount >= p.requiredContributors;
+          return {
+            ...p,
+            approvedContributors: approvedCount,
+            status: isFull ? 'Closed' : (p.status === 'Closed' && !isFull ? 'Open' : p.status),
+          };
+        }
+        return p;
+      });
+      return changed ? updated : prevProjects;
+    });
+  }, [applications]);
 
   // Cross-tab real-time synchronization via storage event
   useEffect(() => {
@@ -835,6 +852,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (resData.success && Array.isArray(resData.applications)) {
         setApplications(resData.applications);
       }
+      if (resData.success && Array.isArray(resData.projects)) {
+        setProjects(resData.projects);
+      }
     } catch (err) {
       console.warn('Network issue saving application to server, saved locally:', err);
     }
@@ -887,6 +907,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const resData = await res.json();
       if (resData.success && Array.isArray(resData.applications)) {
         setApplications(resData.applications);
+      }
+      if (resData.success && Array.isArray(resData.projects)) {
+        setProjects(resData.projects);
       }
       fetch('/api/projects')
         .then((r) => r.json())
@@ -963,6 +986,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success && Array.isArray(data.applications)) {
         setApplications(data.applications);
+      }
+      if (data.success && Array.isArray(data.projects)) {
+        setProjects(data.projects);
       }
       fetch('/api/projects')
         .then((r) => r.json())

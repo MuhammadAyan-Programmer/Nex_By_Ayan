@@ -51,6 +51,9 @@ const AppContent: React.FC = () => {
   const [adminProjectContributorsFilter, setAdminProjectContributorsFilter] = useState<
     string | undefined
   >(undefined);
+  const [adminProjectApplicationsFilter, setAdminProjectApplicationsFilter] = useState<
+    string | undefined
+  >(undefined);
 
   // Handlers for Project actions
   const handleViewProjectDetails = (project: Project) => {
@@ -120,6 +123,7 @@ const AppContent: React.FC = () => {
             setAdminTab(tab);
             setAdminCreditTarget(null);
             setAdminProjectContributorsFilter(undefined);
+            setAdminProjectApplicationsFilter(undefined);
           }}
           onOpenCreateProject={() => setIsAdminCreateOpen(true)}
         />
@@ -141,9 +145,15 @@ const AppContent: React.FC = () => {
                   setAdminProjectContributorsFilter(pId);
                   setAdminTab('approved-contributors');
                 }}
+                onViewApplicationsForProject={(pId) => {
+                  setAdminProjectApplicationsFilter(pId);
+                  setAdminTab('applications');
+                }}
               />
             )}
-            {adminTab === 'applications' && <AdminApplicationsView />}
+            {adminTab === 'applications' && (
+              <AdminApplicationsView initialProjectId={adminProjectApplicationsFilter} />
+            )}
             {adminTab === 'approved-contributors' && (
               <AdminApprovedContributorsView
                 initialProjectId={adminProjectContributorsFilter}

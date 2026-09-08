@@ -19,6 +19,7 @@ import {
   RotateCcw,
   DollarSign,
   AlertTriangle,
+  FileText,
 } from 'lucide-react';
 import { PaymentTypeConfigurator } from './PaymentTypeConfigurator';
 import { formatProjectPayment, getPaymentUnitLabel } from '../../utils/paymentUtils';
@@ -26,13 +27,15 @@ import { formatProjectPayment, getPaymentUnitLabel } from '../../utils/paymentUt
 interface AdminProjectsViewProps {
   onOpenCreateProject: () => void;
   onViewContributorsForProject: (projectId: string) => void;
+  onViewApplicationsForProject?: (projectId: string) => void;
 }
 
 export const AdminProjectsView: React.FC<AdminProjectsViewProps> = ({
   onOpenCreateProject,
   onViewContributorsForProject,
+  onViewApplicationsForProject,
 }) => {
-  const { projects, updateProject, deleteProject } = useApp();
+  const { projects, applications, updateProject, deleteProject } = useApp();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -191,7 +194,8 @@ export const AdminProjectsView: React.FC<AdminProjectsViewProps> = ({
                 <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3">Language</th>
                 <th className="px-4 py-3">Compensation</th>
-                <th className="px-4 py-3">Capacity (Approved / Req / Rem)</th>
+                <th className="px-4 py-3">Applicants (Applied / Review)</th>
+                <th className="px-4 py-3">Capacity (Approved / Target)</th>
                 <th className="px-4 py-3">Timeline</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Actions</th>
@@ -199,7 +203,18 @@ export const AdminProjectsView: React.FC<AdminProjectsViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredProjects.map((p) => {
-                const rem = Math.max(0, p.requiredContributors - p.approvedContributors);
+                const projectApps = applications.filter((a) => a.projectId === p.id);
+                const totalApplied = projectApps.length;
+                const pendingCount = projectApps.filter(
+                  (a) => a.status === 'Applied' || a.status === 'Under Review'
+                ).length;
+                const approvedApps = projectApps.filter((a) => a.status === 'Approved').length;
+                const actualApproved = Math.max(p.approvedContributors || 0, approvedApps);
+                const rem = Math.max(0, p.requiredContributors - actualApproved);
+                const fillPct = Math.min(
+                  100,
+                  Math.round((actualApproved / (p.requiredContributors || 1)) * 100)
+                );
                 return (
                   <tr key={p.id} className="hover:bg-slate-50/50">
                     <td className="px-5 py-3.5 max-w-[240px]">
@@ -220,15 +235,54 @@ export const AdminProjectsView: React.FC<AdminProjectsViewProps> = ({
                       )}
                     </td>
                     <td className="px-4 py-3.5 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 text-xs flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5 text-purple-600" />
+                          {totalApplied} Applied
+                        </span>
+                        {pendingCount > 0 ? (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                            {pendingCount} Pending
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
+                            0 Pending
+                          </span>
+                        )}
+                      </div>
+                      {onViewApplicationsForProject && (
+                        <div className="mt-1">
+                          <button
+                            type="button"
+                            onClick={() => onViewApplicationsForProject(p.id)}
+                            className="text-[11px] font-semibold text-purple-600 hover:text-purple-800 hover:underline flex items-center gap-1"
+                          >
+                            <span>Review Applications</span>
+                            <span>→</span>
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 whitespace-nowrap min-w-[160px]">
                       <div className="font-mono text-xs">
                         <span className="font-bold text-emerald-600">
-                          {p.approvedContributors}
+                          {actualApproved.toLocaleString()}
                         </span>{' '}
                         /{' '}
                         <span className="text-slate-700">
                           {p.requiredContributors.toLocaleString()}
                         </span>{' '}
-                        (<span className="font-semibold text-purple-600">{rem} rem</span>)
+                        (<span className="font-semibold text-purple-600">{rem.toLocaleString()} rem</span>)
+                      </div>
+                      <div className="w-full max-w-[130px] bg-slate-100 rounded-full h-1.5 mt-1.5 overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300"
+                          style={{ width: `${fillPct}%` }}
+                        />
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 flex items-center justify-between max-w-[130px]">
+                        <span>{fillPct}% filled</span>
+                        {rem === 0 && <span className="font-bold text-rose-600">Full</span>}
                       </div>
                     </td>
                     <td className="px-4 py-3.5 text-slate-500 whitespace-nowrap text-[11px]">
@@ -251,6 +305,19 @@ export const AdminProjectsView: React.FC<AdminProjectsViewProps> = ({
                     </td>
                     <td className="px-4 py-3.5 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
+                        {onViewApplicationsForProject && (
+                          <button
+                            type="button"
+                            onClick={() => onViewApplicationsForProject(p.id)}
+                            className="p-1.5 text-slate-500 hover:text-purple-600 hover:bg-slate-100 rounded relative"
+                            title={`Review Applications (${totalApplied} applied, ${pendingCount} pending)`}
+                          >
+                            <FileText className="w-4 h-4" />
+                            {pendingCount > 0 && (
+                              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full ring-2 ring-white" />
+                            )}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => onViewContributorsForProject(p.id)}

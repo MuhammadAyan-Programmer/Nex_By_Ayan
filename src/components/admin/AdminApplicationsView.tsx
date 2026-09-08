@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Application, ApplicationStatus } from '../../types';
 import { Badge } from '../common/Badge';
@@ -20,7 +20,11 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-export const AdminApplicationsView: React.FC = () => {
+interface AdminApplicationsViewProps {
+  initialProjectId?: string;
+}
+
+export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ initialProjectId }) => {
   const {
     applications,
     projects,
@@ -32,9 +36,16 @@ export const AdminApplicationsView: React.FC = () => {
   } = useApp();
 
   const [search, setSearch] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('ALL');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(initialProjectId || 'ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [selectedAppIds, setSelectedAppIds] = useState<string[]>([]);
+
+  // Keep in sync if initialProjectId changes
+  useEffect(() => {
+    if (initialProjectId) {
+      setSelectedProjectId(initialProjectId);
+    }
+  }, [initialProjectId]);
 
   // Detailed Review Modal
   const [activeApp, setActiveApp] = useState<Application | null>(null);
@@ -195,6 +206,26 @@ export const AdminApplicationsView: React.FC = () => {
           </select>
         </div>
       </div>
+
+      {/* Active Project Filter Notice */}
+      {selectedProjectId !== 'ALL' && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-900">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold">Filtered by Project:</span>
+            <span className="font-bold">
+              {projects.find((p) => p.id === selectedProjectId)?.name || selectedProjectId}
+            </span>
+            <span className="text-purple-600">({filteredApps.length} applications found)</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedProjectId('ALL')}
+            className="text-xs font-semibold text-purple-700 hover:text-purple-900 underline flex items-center gap-1"
+          >
+            Show All Projects (Reset)
+          </button>
+        </div>
+      )}
 
       {/* Applications Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
