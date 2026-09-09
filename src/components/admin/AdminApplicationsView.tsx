@@ -18,6 +18,9 @@ import {
   Send,
   Download,
   RefreshCw,
+  AlertTriangle,
+  ExternalLink,
+  Link,
 } from 'lucide-react';
 
 interface AdminApplicationsViewProps {
@@ -33,6 +36,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
     refreshLiveServerData,
     isSyncing,
     lastSyncedAt,
+    syncError,
   } = useApp();
 
   const [search, setSearch] = useState('');
@@ -103,10 +107,17 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900">Application Management</h1>
-            <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live Server Synced
-            </span>
+            {syncError ? (
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                Connection Disconnected
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Server Synced
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Review contributor qualification dossiers, language proficiencies, and adjudicate project seats. Auto-refreshing in real time.
@@ -142,6 +153,26 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
           </button>
         </div>
       </div>
+
+      {syncError && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 text-amber-800 text-sm shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+            <div>
+              <p className="font-semibold text-amber-900">Unable to load live data. Please try again.</p>
+              <p className="text-xs text-amber-700 mt-0.5">Showing verified local dossiers. Auto-reconnecting in progress.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => refreshLiveServerData()}
+            disabled={isSyncing}
+            className="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shrink-0 disabled:opacity-50"
+          >
+            {isSyncing ? 'Retrying...' : 'Retry Connection'}
+          </button>
+        </div>
+      )}
 
       {/* Summary KPI Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -318,9 +349,25 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
                         </button>
                       </td>
                       <td className="px-4 py-3.5">
-                        <div className="font-semibold text-slate-900">{app.userName}</div>
+                        <div className="font-semibold text-slate-900 flex items-center gap-2">
+                          <span>{app.userName}</span>
+                          {(app.cvLink || app.resumeUrl) && (
+                            <a
+                              href={app.cvLink || app.resumeUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200 inline-flex items-center gap-1 transition-colors"
+                              title="Open CV / Resume Link"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ExternalLink className="w-2.5 h-2.5" />
+                              CV Link
+                            </a>
+                          )}
+                        </div>
                         <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
                           <span>{app.userEmail}</span>
+                          {app.phone && <span>• {app.phone}</span>}
                           <span>•</span>
                           <span className="text-slate-600 font-medium">{app.country || 'Global'}</span>
                         </div>
@@ -445,15 +492,47 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
                 </div>
               </div>
 
-              {/* Uploaded CV / Resume File */}
-              {activeApp.resumeFile && (
-                <div>
-                  <h4 className="font-bold text-slate-700 mb-1 flex items-center justify-between">
-                    <span>Uploaded CV / Resume Document</span>
-                    <span className="text-[11px] text-slate-500 font-normal">
-                      {(activeApp.resumeFile.size / 1024).toFixed(1)} KB
+              {/* Candidate CV / Resume Link (Google Drive, Dropbox, etc.) */}
+              <div>
+                <h4 className="font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>Candidate CV / Resume Link</span>
+                  {activeApp.cvLink && (
+                    <span className="text-[11px] text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Shareable Link Provided
                     </span>
-                  </h4>
+                  )}
+                </h4>
+                {activeApp.cvLink || activeApp.resumeUrl ? (
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 font-bold text-xs">
+                        <Link className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <a
+                          href={activeApp.cvLink || activeApp.resumeUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline truncate max-w-sm block"
+                        >
+                          {activeApp.cvLink || activeApp.resumeUrl}
+                        </a>
+                        <p className="text-[10px] text-slate-500">
+                          Click to open candidate's CV document in a new tab
+                        </p>
+                      </div>
+                    </div>
+                    <a
+                      href={activeApp.cvLink || activeApp.resumeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 shadow-xs ml-3"
+                    >
+                      <span>Open CV Link</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                ) : activeApp.resumeFile ? (
                   <div className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-xs">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs shrink-0">
@@ -481,8 +560,12 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
                       </a>
                     )}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                    No external CV link provided for this applicant.
+                  </div>
+                )}
+              </div>
 
               {/* Resume / CV text info */}
               {activeApp.resumeText && (

@@ -99,6 +99,7 @@ export interface UserProfile {
   languageProficiency: Record<string, string>;
   skills: string[];
   experience: string;
+  cvLink?: string;
   resumeUrl?: string;
   resumeText?: string;
   resumeFile?: UploadedFileMeta;
@@ -118,11 +119,13 @@ export interface ProjectApplication {
   userId: string;
   userName: string;
   userEmail: string;
+  phone?: string;
   country: string;
   languages: string[];
   languageProficiency: string;
   experience: string;
   skills: string[];
+  cvLink?: string;
   resumeText?: string;
   resumeFile?: UploadedFileMeta;
   additionalInfo?: string;

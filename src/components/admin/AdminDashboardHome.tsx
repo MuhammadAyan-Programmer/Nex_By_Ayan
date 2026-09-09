@@ -15,6 +15,7 @@ import {
   TrendingUp,
   ShieldCheck,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface AdminDashboardHomeProps {
@@ -34,6 +35,7 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
     refreshLiveServerData,
     isSyncing,
     lastSyncedAt,
+    syncError,
   } = useApp();
 
   // Statistics according to Section 31
@@ -60,10 +62,17 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900">Admin Control Center</h1>
-            <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live Server Synced
-            </span>
+            {syncError ? (
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                Connection Disconnected
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Server Synced
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Operational overview of contributors, global projects, seats capacity, and manual payouts.
@@ -90,6 +99,27 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Database Connection Warning (Section 9: Clear error on API failure, no fake fallback) */}
+      {syncError && (
+        <div id="admin-sync-error-banner" className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 text-amber-800 text-sm shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+            <div>
+              <p className="font-semibold text-amber-900">Unable to load live data. Please try again.</p>
+              <p className="text-xs text-amber-700 mt-0.5">The dashboard will not display fake fallback numbers while the live connection is reconnecting.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => refreshLiveServerData()}
+            disabled={isSyncing}
+            className="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shrink-0 disabled:opacity-50"
+          >
+            {isSyncing ? 'Retrying...' : 'Retry Connection'}
+          </button>
+        </div>
+      )}
 
       {/* 8 Statistics Cards matching Section 31 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">

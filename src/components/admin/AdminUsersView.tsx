@@ -29,6 +29,7 @@ export const AdminUsersView: React.FC = () => {
     refreshLiveServerData,
     isSyncing,
     lastSyncedAt,
+    syncError,
   } = useApp();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
@@ -75,10 +76,17 @@ export const AdminUsersView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900">User Management</h1>
-            <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live Server Synced
-            </span>
+            {syncError ? (
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                Connection Disconnected
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Server Synced
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Directory of registered global workforce contributors and administrators. Auto-refreshing in real time.
@@ -108,6 +116,26 @@ export const AdminUsersView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {syncError && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 text-amber-800 text-sm shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+            <div>
+              <p className="font-semibold text-amber-900">Unable to load live data. Please try again.</p>
+              <p className="text-xs text-amber-700 mt-0.5">Showing verified local records. Live reconnecting in progress.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => refreshLiveServerData()}
+            disabled={isSyncing}
+            className="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shrink-0 disabled:opacity-50"
+          >
+            {isSyncing ? 'Retrying...' : 'Retry Connection'}
+          </button>
+        </div>
+      )}
 
       {/* Summary KPI Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

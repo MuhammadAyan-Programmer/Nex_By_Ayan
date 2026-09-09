@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { UploadedFileMeta } from '../../types';
 import { Badge } from '../common/Badge';
-import { ResumeUpload } from '../common/ResumeUpload';
 import { CountrySelect } from '../common/CountrySelect';
 import {
   User,
@@ -14,6 +12,8 @@ import {
   CheckCircle2,
   Save,
   AlertCircle,
+  Link,
+  Info,
 } from 'lucide-react';
 
 export const UserProfileView: React.FC = () => {
@@ -24,13 +24,11 @@ export const UserProfileView: React.FC = () => {
   const [phone, setPhone] = useState(currentUser?.phone || '');
   const [country, setCountry] = useState(currentUser?.country || 'United States');
   const [languagesStr, setLanguagesStr] = useState(
-    currentUser?.languages?.join(', ') || 'English, German'
+    currentUser?.languages?.join(', ') || 'Arabic, English'
   );
   const [skillsStr, setSkillsStr] = useState(currentUser?.skills?.join(', ') || '');
   const [experience, setExperience] = useState(currentUser?.experience || '');
-  const [resumeFile, setResumeFile] = useState<UploadedFileMeta | null>(
-    currentUser?.resumeFile || null
-  );
+  const [cvLink, setCvLink] = useState(currentUser?.cvLink || '');
   const [resumeText, setResumeText] = useState(currentUser?.resumeText || '');
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -55,7 +53,7 @@ export const UserProfileView: React.FC = () => {
       languages: parsedLanguages,
       skills: parsedSkills,
       experience,
-      resumeFile: resumeFile || undefined,
+      cvLink: cvLink.trim(),
       resumeText,
       profileStatus: 'Complete',
     });
@@ -218,16 +216,26 @@ export const UserProfileView: React.FC = () => {
               />
             </div>
 
-            {/* CV / Resume File Upload */}
+            {/* CV / Resume Link */}
             <div className="pt-1">
-              <ResumeUpload
-                value={resumeFile}
-                onChange={(file) => setResumeFile(file)}
-                label="Primary CV / Resume Document"
-                required={false}
-                helpText="PDF (.pdf) or Word (.doc, .docx) • Max 10MB"
-                idPrefix="profile-cv-upload"
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Link className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>CV / Resume Link (Google Drive, Dropbox, etc.)</span>
+                </span>
+                <span className="text-[11px] text-slate-400">Shareable URL</span>
+              </label>
+              <input
+                type="url"
+                value={cvLink}
+                onChange={(e) => setCvLink(e.target.value)}
+                placeholder="https://drive.google.com/file/d/.../view?usp=sharing"
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono shadow-2xs"
               />
+              <div className="mt-1.5 p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg flex items-start gap-2 text-[11px] text-blue-800">
+                <Info className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
+                <span>Make sure file permissions are set to "Anyone with the link can view" so project reviewers can access your resume.</span>
+              </div>
             </div>
 
             <div>

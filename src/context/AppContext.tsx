@@ -62,6 +62,8 @@ interface AppContextType {
     skills: string[];
     languages: string[];
     languageProficiency: string;
+    cvLink?: string;
+    phone?: string;
     resumeText?: string;
     resumeFile?: UploadedFileMeta;
     additionalInfo?: string;
@@ -73,6 +75,7 @@ interface AppContextType {
   refreshLiveServerData: () => Promise<void>;
   isSyncing: boolean;
   lastSyncedAt: Date;
+  syncError: string | null;
 
   // Payments & Earnings
   paymentMethods: PaymentMethod[];
@@ -118,14 +121,20 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Migration check: Purge any old cache to load fresh Egyptian workforce & live server data
-const CURRENT_DATA_VERSION = 'v4_egypt_workforce_sync';
+// Migration check: Purge all old legacy/seed data to start completely clean with central database
+const CURRENT_DATA_VERSION = 'v5_clean_central_production_db';
 try {
   if (typeof window !== 'undefined' && localStorage.getItem('nexora_data_version') !== CURRENT_DATA_VERSION) {
     const keysToClean = [
       'nexora_projects',
       'nexora_applications',
       'nexora_users',
+      'nexora_user_passwords',
+      'nexora_earnings',
+      'nexora_withdrawals',
+      'nexora_projectUpdates',
+      'nexora_notifications',
+      'nexora_currentUser',
     ];
     keysToClean.forEach((k) => localStorage.removeItem(k));
     localStorage.setItem('nexora_data_version', CURRENT_DATA_VERSION);
@@ -283,17 +292,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Live Server Synchronization State
+  const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date>(new Date());
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const refreshLiveServerData = useCallback(async () => {
     try {
       setIsSyncing(true);
       const [projRes, appRes, userRes] = await Promise.all([
-        fetch('/api/projects').then((r) => r.json()).catch(() => null),
-        fetch('/api/applications').then((r) => r.json()).catch(() => null),
-        fetch('/api/users').then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/api/projects`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/api/applications`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/api/users`).then((r) => r.json()).catch(() => null),
       ]);
+
+      if (!projRes && !appRes && !userRes) {
+        setSyncError('Unable to load live data. Please try again.');
+      } else {
+        setSyncError(null);
+      }
 
       if (projRes?.success && Array.isArray(projRes.projects) && projRes.projects.length > 0) {
         setProjects(projRes.projects);
@@ -312,52 +329,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUsers(cleanUsers);
       }
       setLastSyncedAt(new Date());
+    } catch (err) {
+      console.warn('Sync error:', err);
+      setSyncError('Unable to load live data. Please try again.');
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [API_BASE]);
 
   // Fetch live projects, applications, and users from backend server and setup polling
   useEffect(() => {
-    // Initial fetch
+    // Initial fetch from central database
     refreshLiveServerData();
-
-    // Auto-sync any existing local applications to server database
-    const localApps = loadStorage<ProjectApplication[]>('applications', []);
-    if (localApps.length > 0) {
-      fetch('/api/applications/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ applications: localApps }),
-      })
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.success && Array.isArray(d.applications)) {
-            setApplications(d.applications);
-          }
-        })
-        .catch(() => {});
-    }
-
-    // Auto-sync local projects if any
-    const localProjects = loadStorage<Project[]>('projects', []);
-    if (localProjects.length > 0) {
-      fetch('/api/projects/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projects: localProjects }),
-      }).catch(() => {});
-    }
-
-    // Auto-sync current user if registered locally
-    const savedUser = loadStorage<UserProfile | null>('currentUser', null);
-    if (savedUser && savedUser.email && savedUser.email.toLowerCase() !== 'contributor@nexora.work') {
-      fetch('/api/users/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: savedUser }),
-      }).catch(() => {});
-    }
 
     // Live auto-polling every 4 seconds so admin sees new applicants and status changes instantly
     const pollInterval = setInterval(() => {
@@ -373,52 +356,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearInterval(pollInterval);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [refreshLiveServerData]);
+  }, [refreshLiveServerData, API_BASE]);
 
   const setCurrentUser = (user: UserProfile | null) => {
     setCurrentUserState(user);
   };
 
-  // UNIFIED AUTHENTICATION
+  // UNIFIED AUTHENTICATION (Section 5: Database authentication, no hardcoded credentials)
   const login = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
     const normEmail = email.trim().toLowerCase();
-
-    // 1. Direct Admin validation (guaranteed instant access)
-    if (
-      (normEmail === '03004292351muhammadayan@gmail.com' || normEmail === 'admin@nexora.work') &&
-      (password === 'Admin123' || password === 'Admin123@')
-    ) {
-      const adminProfile: UserProfile = {
-        id: 'adm-001',
-        firstName: 'Muhammad',
-        lastName: 'Ayan',
-        email: '03004292351muhammadayan@gmail.com',
-        role: 'admin',
-        isEmailVerified: true,
-        profileStatus: 'Complete',
-        avatar: 'MA',
-        country: 'Global',
-        languages: ['English', 'Arabic'],
-        languageProficiency: {
-          English: 'Native / Fluent',
-          Arabic: 'Professional Working',
-        },
-        skills: ['Workforce Operations', 'Quality Assurance', 'Project Architecture'],
-        experience: 'Platform Administrator & Operations Director at Nexora Workforce',
-        status: 'active',
-        createdAt: '2026-09-01',
-        phone: '',
-      };
-      setCurrentUserState(adminProfile);
-      return { success: true };
+    if (!normEmail || !password) {
+      return { success: false, message: 'Please enter both email and password.' };
     }
 
-    // 2. Attempt Backend Login with timeout
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normEmail, password }),
@@ -443,45 +398,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return { success: true };
         }
 
-        if (res.status === 401 || res.status === 400 || res.status === 403) {
-          // Check if user was registered locally or in offline cache
-          const localPass = getLocalPassword(normEmail);
-          const found = users.find((u) => u.email.toLowerCase() === normEmail);
-          if (found && localPass && localPass === password) {
-            if (found.status === 'suspended') {
-              return { success: false, message: 'Your account has been suspended. Please contact platform support.' };
-            }
-            setCurrentUserState(found);
-            return { success: true };
-          }
-          return {
-            success: false,
-            message: data.message || 'Invalid email or password.',
-          };
+        if (data && data.message) {
+          return { success: false, message: data.message };
         }
       }
 
-      throw new Error('Server returned non-JSON response');
+      return {
+        success: false,
+        message: 'Invalid email or password. Please verify your credentials and try again.',
+      };
     } catch (err) {
-      // 3. Fallback when network or backend is unreachable
-      console.warn('Login network fallback engaged:', err);
+      console.warn('Login request failed, checking local session cache:', err);
+      // Fallback only if offline/local cache matches
       const found = users.find((u) => u.email.toLowerCase() === normEmail);
       if (found) {
         if (found.status === 'suspended') {
           return { success: false, message: 'Your account has been suspended. Please contact platform support.' };
         }
         const storedPass = getLocalPassword(normEmail);
-        if (!storedPass || storedPass === password) {
-          saveLocalPassword(normEmail, password);
+        if (storedPass && storedPass === password) {
           setCurrentUserState(found);
           return { success: true };
         }
-        return { success: false, message: 'Incorrect password for this email address.' };
       }
-
       return {
         success: false,
-        message: 'Invalid email or password. Please verify your credentials and try again.',
+        message: 'Unable to connect to authentication server. Please check your connection and try again.',
       };
     }
   };
@@ -529,9 +471,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch(`${API_BASE}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -609,7 +551,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Schedule background sync once server is responsive
       setTimeout(() => {
-        fetch('/api/auth/register', {
+        fetch(`${API_BASE}/api/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -636,7 +578,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUserState(updated);
 
     // Also notify server
-    fetch(`/api/users/${currentUser.id}/verify-email`, { method: 'PATCH' }).catch(() => {});
+    fetch(`${API_BASE}/api/users/${currentUser.id}/verify-email`, { method: 'PATCH' }).catch(() => {});
 
     // Update in local users list
     setUsers((prev) =>
@@ -677,7 +619,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return u;
       })
     );
-    fetch(`/api/users/${id}/status`, { method: 'PATCH' }).catch(() => {});
+    fetch(`${API_BASE}/api/users/${id}/status`, { method: 'PATCH' }).catch(() => {});
   };
 
   const toggleEmailVerification = (id: string) => {
@@ -694,7 +636,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return u;
       })
     );
-    fetch(`/api/users/${id}/verify-email`, { method: 'PATCH' }).catch(() => {});
+    fetch(`${API_BASE}/api/users/${id}/verify-email`, { method: 'PATCH' }).catch(() => {});
   };
 
   const deleteUser = (id: string) => {
@@ -708,7 +650,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentUserState(null);
     }
 
-    fetch(`/api/users/${id}`, { method: 'DELETE' }).catch(() => {});
+    fetch(`${API_BASE}/api/users/${id}`, { method: 'DELETE' }).catch(() => {});
   };
 
   const purgeTempUsers = () => {
@@ -729,7 +671,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ) {
       setCurrentUserState(null);
     }
-    fetch('/api/users/purge-temp', { method: 'POST' }).catch(() => {});
+    fetch(`${API_BASE}/api/users/purge-temp`, { method: 'POST' }).catch(() => {});
   };
 
   // Projects
@@ -741,7 +683,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString().split('T')[0],
     };
     setProjects((prev) => [newProj, ...prev]);
-    fetch('/api/projects', {
+    fetch(`${API_BASE}/api/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newProj),
@@ -773,7 +715,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
 
-    fetch(`/api/projects/${id}`, {
+    fetch(`${API_BASE}/api/projects/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -784,7 +726,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProjects((prev) => prev.filter((p) => p.id !== id));
     setApplications((prev) => prev.filter((a) => a.projectId !== id));
     setProjectUpdates((prev) => prev.filter((u) => u.projectId !== id));
-    fetch(`/api/projects/${id}`, { method: 'DELETE' }).catch(() => {});
+    fetch(`${API_BASE}/api/projects/${id}`, { method: 'DELETE' }).catch(() => {});
   };
 
   const closeProject = (id: string) => {
@@ -798,6 +740,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     skills: string[];
     languages: string[];
     languageProficiency: string;
+    cvLink?: string;
+    phone?: string;
     resumeText?: string;
     resumeFile?: UploadedFileMeta;
     additionalInfo?: string;
@@ -813,10 +757,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         (a.userId === currentUser.id || a.userEmail.toLowerCase() === currentUser.email.toLowerCase())
     );
     if (existing) {
-      return { success: false, message: `You have already applied for this project (${existing.status}).` };
+      return { success: false, message: `You have already submitted an application for this project (${existing.status}). Duplicate applications are not allowed.` };
     }
 
-    const attachedFile = data.resumeFile || currentUser.resumeFile;
+    const cleanCvLink = (data.cvLink || currentUser.cvLink || '').trim();
+    if (!cleanCvLink) {
+      return { success: false, message: 'Please provide a valid shareable CV/Resume link (e.g. Google Drive link).' };
+    }
 
     const newApp: ProjectApplication = {
       id: `app-${Date.now().toString().slice(-5)}`,
@@ -826,13 +773,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       userId: currentUser.id,
       userName: `${currentUser.firstName} ${currentUser.lastName}`.trim(),
       userEmail: currentUser.email,
+      phone: (data.phone || currentUser.phone || '').trim(),
       country: currentUser.country,
       languages: data.languages,
       languageProficiency: data.languageProficiency,
       experience: data.experience,
       skills: data.skills,
+      cvLink: cleanCvLink,
       resumeText: data.resumeText || currentUser.resumeText,
-      resumeFile: attachedFile,
+      resumeFile: data.resumeFile || currentUser.resumeFile,
       additionalInfo: data.additionalInfo,
       status: 'Applied',
       appliedDate: new Date().toISOString().split('T')[0],
@@ -843,12 +792,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Guaranteed backend server persistence
     try {
-      const res = await fetch('/api/applications', {
+      const res = await fetch(`${API_BASE}/api/applications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newApp),
       });
       const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        // Rollback state if server rejected
+        setApplications((prev) => prev.filter((a) => a.id !== newApp.id));
+        return { success: false, message: resData.message || 'Failed to submit application.' };
+      }
       if (resData.success && Array.isArray(resData.applications)) {
         setApplications(resData.applications);
       }
@@ -856,12 +810,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setProjects(resData.projects);
       }
     } catch (err) {
-      console.warn('Network issue saving application to server, saved locally:', err);
+      console.warn('Network issue saving application to server:', err);
+      return { success: false, message: 'Network connection issue. Please check your internet connection and try again.' };
     }
 
-    // Update current user profile with the resumeFile if user didn't have one
-    if (data.resumeFile && !currentUser.resumeFile) {
-      updateProfile({ resumeFile: data.resumeFile });
+    // Update current user profile with the cvLink if not present
+    if (cleanCvLink && !currentUser.cvLink) {
+      updateProfile({ cvLink: cleanCvLink });
     }
 
     const notif: NotificationItem = {
@@ -899,7 +854,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Call server to persist application status and recalculate capacity
     try {
-      const res = await fetch(`/api/applications/${id}`, {
+      const res = await fetch(`${API_BASE}/api/applications/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, notes }),
@@ -911,7 +866,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (resData.success && Array.isArray(resData.projects)) {
         setProjects(resData.projects);
       }
-      fetch('/api/projects')
+      fetch(`${API_BASE}/api/projects`)
         .then((r) => r.json())
         .then((d) => {
           if (d.success && Array.isArray(d.projects)) setProjects(d.projects);
@@ -978,7 +933,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     try {
-      const res = await fetch('/api/applications/bulk-approve', {
+      const res = await fetch(`${API_BASE}/api/applications/bulk-approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
@@ -990,7 +945,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.success && Array.isArray(data.projects)) {
         setProjects(data.projects);
       }
-      fetch('/api/projects')
+      fetch(`${API_BASE}/api/projects`)
         .then((r) => r.json())
         .then((d) => {
           if (d.success && Array.isArray(d.projects)) setProjects(d.projects);
@@ -1333,6 +1288,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         refreshLiveServerData,
         isSyncing,
         lastSyncedAt,
+        syncError,
 
         paymentMethods,
         addPaymentMethod,

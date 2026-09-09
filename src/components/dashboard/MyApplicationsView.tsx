@@ -2,7 +2,7 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { Badge } from '../common/Badge';
 import { UserTab } from './UserSidebar';
-import { FileCheck2, Clock, CheckCircle2, XCircle, AlertCircle, ArrowRight, FolderKanban, FileText, Download } from 'lucide-react';
+import { FileCheck2, Clock, CheckCircle2, XCircle, AlertCircle, ArrowRight, FolderKanban, FileText, Download, ExternalLink } from 'lucide-react';
 import { ApplicationStatus } from '../../types';
 
 interface MyApplicationsViewProps {
@@ -88,6 +88,18 @@ export const MyApplicationsView: React.FC<MyApplicationsViewProps> = ({ onNaviga
                         <span className="text-[10px] text-slate-400 font-normal">
                           ID: {app.id}
                         </span>
+                        {(app.cvLink || app.resumeUrl) && (
+                          <a
+                            href={app.cvLink || app.resumeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200 transition-colors"
+                            title="Open submitted CV Link"
+                          >
+                            <ExternalLink className="w-2.5 h-2.5" />
+                            CV Link
+                          </a>
+                        )}
                         {app.resumeFile && (
                           <a
                             href={app.resumeFile.dataUrl}
