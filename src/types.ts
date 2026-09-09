@@ -93,7 +93,7 @@ export interface UserProfile {
   firstName: string;
   lastName: string;
   email: string;
-  phone: string;
+  phone?: string;
   country: string;
   languages: string[];
   languageProficiency: Record<string, string>;

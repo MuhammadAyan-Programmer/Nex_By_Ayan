@@ -107,14 +107,25 @@ export function verifyPassword(password: string, storedHash?: string): boolean {
   if (storedHash.includes(':')) {
     try {
       const [salt, key] = storedHash.split(':');
-      const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-      return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(key, 'hex'));
+      const hash1 = crypto.scryptSync(password, salt, 64).toString('hex');
+      if (crypto.timingSafeEqual(Buffer.from(hash1, 'hex'), Buffer.from(key, 'hex'))) {
+        return true;
+      }
+      // Also verify trimmed password in case of copy-paste trailing/leading whitespace
+      const trimmed = password.trim();
+      if (trimmed !== password) {
+        const hash2 = crypto.scryptSync(trimmed, salt, 64).toString('hex');
+        if (crypto.timingSafeEqual(Buffer.from(hash2, 'hex'), Buffer.from(key, 'hex'))) {
+          return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }
   }
   // Plain text match fallback (for legacy or direct matches)
-  return storedHash === password;
+  return storedHash === password || storedHash === password.trim();
 }
 
 // Storage path resolution: check if cwd/data is writable, otherwise use /tmp/data
