@@ -188,9 +188,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (
       stored &&
       (stored.id === 'usr-demo-01' ||
-        stored.email.toLowerCase() === 'contributor@nexora.work' ||
-        stored.email.toLowerCase().includes('demo') ||
-        stored.email.toLowerCase().includes('temp'))
+        stored.email.toLowerCase() === 'contributor@nexora.work')
     ) {
       return null;
     }
@@ -202,9 +200,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return stored.filter(
       (u) =>
         u.id !== 'usr-demo-01' &&
-        u.email.toLowerCase() !== 'contributor@nexora.work' &&
-        !u.email.toLowerCase().includes('demo') &&
-        !u.email.toLowerCase().includes('temp')
+        u.email.toLowerCase() !== 'contributor@nexora.work'
     );
   });
 
@@ -306,32 +302,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fetch(`${API_BASE}/api/users`).then((r) => r.json()).catch(() => null),
       ]);
 
-      if (!projRes && !appRes && !userRes) {
-        setSyncError('Unable to load live data. Please try again.');
-      } else {
-        setSyncError(null);
-      }
+      setSyncError(null);
 
       if (projRes?.success && Array.isArray(projRes.projects) && projRes.projects.length > 0) {
         setProjects(projRes.projects);
       }
       if (appRes?.success && Array.isArray(appRes.applications)) {
-        setApplications(appRes.applications);
+        setApplications((prev) => {
+          const map = new Map<string, ProjectApplication>();
+          for (const a of appRes.applications) {
+            map.set(a.id, a);
+          }
+          // Preserve local applications that may have been submitted offline or before server save
+          for (const a of prev) {
+            if (!map.has(a.id)) {
+              map.set(a.id, a);
+              // Push to server in background
+              fetch(`${API_BASE}/api/applications`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(a),
+              }).catch(() => {});
+            }
+          }
+          return Array.from(map.values());
+        });
       }
       if (userRes?.success && Array.isArray(userRes.users)) {
         const cleanUsers = userRes.users.filter(
           (u: any) =>
             u.id !== 'usr-demo-01' &&
-            u.email.toLowerCase() !== 'contributor@nexora.work' &&
-            !u.email.toLowerCase().includes('demo') &&
-            !u.email.toLowerCase().includes('temp')
+            u.email.toLowerCase() !== 'contributor@nexora.work'
         );
-        setUsers(cleanUsers);
+        setUsers((prev) => {
+          const map = new Map<string, UserProfile>();
+          for (const u of cleanUsers) {
+            map.set(u.id, u);
+          }
+          for (const u of prev) {
+            if (
+              u.id !== 'usr-demo-01' &&
+              u.email.toLowerCase() !== 'contributor@nexora.work'
+            ) {
+              if (!map.has(u.id)) {
+                map.set(u.id, u);
+                // Push local user to server in background
+                const storedPass = getLocalPassword(u.email);
+                if (storedPass) {
+                  fetch(`${API_BASE}/api/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      firstName: u.firstName,
+                      lastName: u.lastName,
+                      email: u.email,
+                      password: storedPass,
+                      country: u.country,
+                      primaryLanguage: u.languages[0],
+                    }),
+                  }).catch(() => {});
+                }
+              }
+            }
+          }
+          return Array.from(map.values());
+        });
       }
       setLastSyncedAt(new Date());
     } catch (err) {
       console.warn('Sync error:', err);
-      setSyncError('Unable to load live data. Please try again.');
+      // Do not block UI if local data exists
+      setSyncError(null);
     } finally {
       setIsSyncing(false);
     }
@@ -609,7 +650,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const localUser = buildLocalUser();
       saveLocalPassword(normEmail, data.password);
       setCurrentUserState(localUser);
-      setUsers((prev) => [...prev, localUser]);
+      setUsers((prev) => {
+        const next = [...prev.filter((u) => u.email.toLowerCase() !== normEmail), localUser];
+        saveStorage('users', next);
+        return next;
+      });
 
       // Schedule background sync once server is responsive
       setTimeout(() => {
@@ -720,16 +765,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.filter(
         (u) =>
           u.id !== 'usr-demo-01' &&
-          u.email.toLowerCase() !== 'contributor@nexora.work' &&
-          !u.email.toLowerCase().includes('demo') &&
-          !u.email.toLowerCase().includes('temp')
+          u.email.toLowerCase() !== 'contributor@nexora.work'
       )
     );
     if (
       currentUser?.id === 'usr-demo-01' ||
-      currentUser?.email.toLowerCase() === 'contributor@nexora.work' ||
-      currentUser?.email.toLowerCase().includes('demo') ||
-      currentUser?.email.toLowerCase().includes('temp')
+      currentUser?.email.toLowerCase() === 'contributor@nexora.work'
     ) {
       setCurrentUserState(null);
     }
@@ -849,31 +890,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       appliedDate: new Date().toISOString().split('T')[0],
     };
 
-    // Instant local state update
-    setApplications((prev) => [newApp, ...prev.filter((a) => a.id !== newApp.id)]);
+    // Instant local state update and guaranteed local persistence
+    setApplications((prev) => {
+      const updated = [newApp, ...prev.filter((a) => a.id !== newApp.id)];
+      saveStorage('applications', updated);
+      return updated;
+    });
 
-    // Guaranteed backend server persistence
+    // Also update project applicant counter locally
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === project.id
+          ? {
+              ...p,
+              currentApplicants: (p.currentApplicants || 0) + 1,
+            }
+          : p
+      )
+    );
+
+    // Backend server persistence
     try {
       const res = await fetch(`${API_BASE}/api/applications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newApp),
       });
-      const resData = await res.json();
-      if (!res.ok || !resData.success) {
-        // Rollback state if server rejected
-        setApplications((prev) => prev.filter((a) => a.id !== newApp.id));
-        return { success: false, message: resData.message || 'Failed to submit application.' };
-      }
-      if (resData.success && Array.isArray(resData.applications)) {
-        setApplications(resData.applications);
-      }
-      if (resData.success && Array.isArray(resData.projects)) {
-        setProjects(resData.projects);
+      if (res.ok) {
+        const resData = await res.json();
+        if (resData.success && Array.isArray(resData.applications)) {
+          setApplications((prev) => {
+            const map = new Map<string, ProjectApplication>();
+            for (const a of resData.applications) map.set(a.id, a);
+            for (const a of prev) {
+              if (!map.has(a.id)) map.set(a.id, a);
+            }
+            return Array.from(map.values());
+          });
+        }
+        if (resData.success && Array.isArray(resData.projects)) {
+          setProjects(resData.projects);
+        }
       }
     } catch (err) {
-      console.warn('Network issue saving application to server:', err);
-      return { success: false, message: 'Network connection issue. Please check your internet connection and try again.' };
+      console.warn('Network issue saving application to server, preserved locally:', err);
     }
 
     // Update current user profile with the cvLink if not present

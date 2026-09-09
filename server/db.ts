@@ -128,8 +128,11 @@ export function verifyPassword(password: string, storedHash?: string): boolean {
   return storedHash === password || storedHash === password.trim();
 }
 
-// Storage path resolution: check if cwd/data is writable, otherwise use /tmp/data
+// Storage path resolution: check if running on Vercel/serverless or if cwd/data is writable
 let DATA_DIR = path.join(process.cwd(), 'data');
+if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION) {
+  DATA_DIR = path.join('/tmp', 'nexora_data');
+}
 try {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -139,8 +142,12 @@ try {
   fs.unlinkSync(testFile);
 } catch {
   DATA_DIR = path.join('/tmp', 'nexora_data');
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (e) {
+    console.warn('[Storage] Fallback to in-memory only:', e);
   }
 }
 

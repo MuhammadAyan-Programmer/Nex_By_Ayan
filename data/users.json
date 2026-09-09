@@ -1,5 +1,30 @@
 [
   {
+    "id": "usr-13269",
+    "firstName": "Ayan",
+    "lastName": "Muhammad",
+    "email": "ayan.test@gmail.com",
+    "password": "fa8e9dd3de4b0d54c8e5e1921570d550:dc1ce1bb6fb3e96f2534a9522b3200cd0c21502a9d04a5c217a07290a368006aa6222c57b0565bf7329a36eedd64d3bb59360a4d60f601be89009f2efc75aba0",
+    "phone": "",
+    "country": "Pakistan",
+    "languages": [
+      "Urdu"
+    ],
+    "languageProficiency": {
+      "Urdu": "Native / Fluent"
+    },
+    "skills": [
+      "Translation & Localization"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "role": "contributor",
+    "isEmailVerified": false,
+    "profileStatus": "Incomplete",
+    "avatar": "AM",
+    "status": "active",
+    "createdAt": "2026-09-09"
+  },
+  {
     "id": "usr-62223",
     "firstName": "Tariq",
     "lastName": "Mansour",

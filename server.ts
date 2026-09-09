@@ -1,17 +1,20 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import {
   db,
-  StoredUser,
-  StoredProject,
-  StoredApplication,
-  StoredProjectUpdate,
   verifyPassword,
   hashPassword,
   CANONICAL_ADMIN_EMAIL,
   CANONICAL_ADMIN_PASSWORD,
-} from './server/db';
+} from './server/db.ts';
+import type {
+  StoredUser,
+  StoredProject,
+  StoredApplication,
+  StoredProjectUpdate,
+} from './server/db.ts';
 
 dotenv.config();
 
