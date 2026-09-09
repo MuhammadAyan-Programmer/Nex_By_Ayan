@@ -133,6 +133,10 @@ try {
   }
 }
 
+// Canonical single Administrator account configuration
+export const CANONICAL_ADMIN_EMAIL = 'admin@nexora.ai';
+export const CANONICAL_ADMIN_PASSWORD = 'Admin1@';
+
 // The single real Open project definition
 export const CANONICAL_ARABIC_PROJECT: StoredProject = {
   id: 'proj-arabic-en-001',
@@ -219,6 +223,82 @@ class DatabaseService {
     }
     this.applicationsCache = loadJsonFile<StoredApplication[]>('applications.json', []);
     this.updatesCache = loadJsonFile<StoredProjectUpdate[]>('updates.json', []);
+
+    // Immediately guarantee single Admin account exists in memory with hashed password
+    this.ensureSingleAdminAccount();
+  }
+
+  public ensureSingleAdminAccount(): void {
+    const adminEmailNorm = CANONICAL_ADMIN_EMAIL.toLowerCase();
+
+    // 1. Purge any conflicting or duplicate admin accounts (strictly single Admin)
+    this.usersCache = this.usersCache.filter((u) => {
+      if (u.role === 'admin' && u.email.toLowerCase() !== adminEmailNorm) {
+        return false;
+      }
+      return true;
+    });
+
+    const existingAdminIdx = this.usersCache.findIndex(
+      (u) => u.email.toLowerCase() === adminEmailNorm
+    );
+    const hashedPw = hashPassword(CANONICAL_ADMIN_PASSWORD);
+
+    if (existingAdminIdx >= 0) {
+      const existing = this.usersCache[existingAdminIdx];
+      const hasValidPassword =
+        existing.password && verifyPassword(CANONICAL_ADMIN_PASSWORD, existing.password);
+      this.usersCache[existingAdminIdx] = {
+        ...existing,
+        id: existing.id || 'admin-001',
+        firstName: existing.firstName || 'Admin',
+        lastName: existing.lastName || 'Nexora',
+        email: CANONICAL_ADMIN_EMAIL,
+        role: 'admin',
+        isEmailVerified: true,
+        profileStatus: 'Complete',
+        avatar: existing.avatar || 'AN',
+        country: existing.country || 'Global',
+        languages: existing.languages?.length ? existing.languages : ['English', 'Arabic'],
+        languageProficiency: existing.languageProficiency || {
+          English: 'Native / Fluent',
+          Arabic: 'Professional Working',
+        },
+        skills: existing.skills?.length
+          ? existing.skills
+          : ['Workforce Operations', 'Quality Assurance', 'Project Architecture'],
+        experience:
+          existing.experience ||
+          'Platform Administrator & Operations Director at Nexora Workforce',
+        status: 'active',
+        password: hasValidPassword ? existing.password : hashedPw,
+        createdAt: existing.createdAt || '2026-09-01',
+      };
+    } else {
+      const adminRecord: StoredUser = {
+        id: 'admin-001',
+        firstName: 'Admin',
+        lastName: 'Nexora',
+        email: CANONICAL_ADMIN_EMAIL,
+        password: hashedPw,
+        role: 'admin',
+        isEmailVerified: true,
+        profileStatus: 'Complete',
+        avatar: 'AN',
+        country: 'Global',
+        languages: ['English', 'Arabic'],
+        languageProficiency: {
+          English: 'Native / Fluent',
+          Arabic: 'Professional Working',
+        },
+        skills: ['Workforce Operations', 'Quality Assurance', 'Project Architecture'],
+        experience:
+          'Platform Administrator & Operations Director at Nexora Workforce',
+        status: 'active',
+        createdAt: '2026-09-01',
+      };
+      this.usersCache.unshift(adminRecord);
+    }
   }
 
   public async init(): Promise<void> {
@@ -251,6 +331,7 @@ class DatabaseService {
       console.log('[DB] No DATABASE_URL set. Running with persistent server storage in:', DATA_DIR);
     }
 
+    this.ensureSingleAdminAccount();
     this.recalculateProjectCapacities();
     this.saveAll();
     this.initialized = true;
@@ -397,6 +478,45 @@ class DatabaseService {
       DELETE FROM projects WHERE id != 'proj-arabic-en-001';
     `);
 
+    // Purge any conflicting or legacy admin accounts from PostgreSQL
+    await this.pool.query(
+      `DELETE FROM users WHERE role = 'admin' AND LOWER(email) != $1`,
+      [CANONICAL_ADMIN_EMAIL.toLowerCase()]
+    );
+
+    // Upsert the single canonical Admin account with securely hashed password
+    const adminRecord = this.usersCache.find(
+      (u) => u.email.toLowerCase() === CANONICAL_ADMIN_EMAIL.toLowerCase()
+    );
+    if (adminRecord) {
+      await this.pool.query(
+        `INSERT INTO users (
+          id, first_name, last_name, email, password, role, is_email_verified,
+          profile_status, avatar, country, languages, language_proficiency,
+          skills, experience, status, created_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, 'admin', true, 'Complete', 'AN', 'Global',
+          $6, $7, $8, $9, 'active', '2026-09-01'
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          email = EXCLUDED.email,
+          role = 'admin',
+          password = EXCLUDED.password,
+          status = 'active'`,
+        [
+          adminRecord.id,
+          adminRecord.firstName,
+          adminRecord.lastName,
+          adminRecord.email,
+          adminRecord.password,
+          JSON.stringify(adminRecord.languages),
+          JSON.stringify(adminRecord.languageProficiency),
+          JSON.stringify(adminRecord.skills),
+          adminRecord.experience || '',
+        ]
+      );
+    }
+
     // Ensure the canonical Arabic project exists in PostgreSQL
     await this.pool.query(
       `INSERT INTO projects (
@@ -537,6 +657,9 @@ class DatabaseService {
         rating: r.rating ? parseFloat(r.rating) : undefined,
         paymentMethodId: r.payment_method_id,
       }));
+
+      // Maintain single admin account in memory state
+      this.ensureSingleAdminAccount();
     } catch (err) {
       console.error('[DB] Error refreshing state from PostgreSQL:', err);
     }

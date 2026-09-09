@@ -1,1 +1,55 @@
-[]
+[
+  {
+    "id": "usr-62223",
+    "firstName": "Tariq",
+    "lastName": "Mansour",
+    "email": "tariq.linguist@nexora.net",
+    "password": "0135fc69db210952418f3fef38cf3384:1e5034a37d3ec03ac79b79b520c103825cef7b7f3002523cfcf448ba3e46debbd15335b32dae63c1e10152e33ced4923244ece3f1ed0803dc402b04aa97de2c8",
+    "phone": "",
+    "country": "Egypt",
+    "languages": [
+      "Arabic"
+    ],
+    "languageProficiency": {
+      "Arabic": "Native / Fluent"
+    },
+    "skills": [
+      "Translation & Localization"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "role": "contributor",
+    "isEmailVerified": false,
+    "profileStatus": "Incomplete",
+    "avatar": "TM",
+    "status": "active",
+    "createdAt": "2026-09-09"
+  },
+  {
+    "id": "admin-001",
+    "firstName": "Admin",
+    "lastName": "Nexora",
+    "email": "admin@nexora.ai",
+    "password": "bace5ff0e6a27f1c9055773854361e90:31baf83c3224f24517f7b58fdd609782ac64206c35d711f93071311e0702ae2c52ce6519b93ea6c0db1936684f6035da2865c50d8d551c30e788dac09d56b905",
+    "role": "admin",
+    "isEmailVerified": true,
+    "profileStatus": "Complete",
+    "avatar": "AN",
+    "country": "Global",
+    "languages": [
+      "English",
+      "Arabic"
+    ],
+    "languageProficiency": {
+      "English": "Native / Fluent",
+      "Arabic": "Professional Working"
+    },
+    "skills": [
+      "Workforce Operations",
+      "Quality Assurance",
+      "Project Architecture"
+    ],
+    "experience": "Platform Administrator & Operations Director at Nexora Workforce",
+    "status": "active",
+    "createdAt": "2026-09-01"
+  }
+]

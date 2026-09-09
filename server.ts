@@ -2,7 +2,15 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
-import { db, StoredUser, StoredProject, StoredApplication, StoredProjectUpdate, verifyPassword } from './server/db';
+import {
+  db,
+  StoredUser,
+  StoredProject,
+  StoredApplication,
+  StoredProjectUpdate,
+  verifyPassword,
+  CANONICAL_ADMIN_EMAIL,
+} from './server/db';
 
 dotenv.config();
 
@@ -27,27 +35,6 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Admin credentials verification helper
-const ADMIN_EMAIL = '03004292351muhammadayan@gmail.com';
-
-const isValidAdminEmail = (emailStr: string): boolean => {
-  const norm = emailStr.trim().toLowerCase();
-  return (
-    norm === ADMIN_EMAIL.toLowerCase() ||
-    norm === 'admin@nexora.work' ||
-    Boolean(process.env.ADMIN_EMAIL && norm === process.env.ADMIN_EMAIL.trim().toLowerCase())
-  );
-};
-
-const isValidAdminPassword = (pw: string): boolean => {
-  return (
-    pw === 'admin' ||
-    pw === 'Admin123' ||
-    pw === 'Admin123@' ||
-    Boolean(process.env.ADMIN_PASSWORD && pw === process.env.ADMIN_PASSWORD)
-  );
-};
 
 // =================== API ROUTER ===================
 const apiRouter = express.Router();
@@ -77,7 +64,7 @@ apiRouter.get('/stats', async (_req: Request, res: Response) => {
 
 // =================== AUTHENTICATION API (Section 5) ===================
 
-// Unified Login Endpoint: email + password
+// Unified Login Endpoint: email + password (Single Admin + Contributors)
 apiRouter.post('/auth/login', async (req: Request, res: Response) => {
   const { email, password } = req.body || {};
 
@@ -91,66 +78,35 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
   const normalizedEmail = String(email).trim().toLowerCase();
   const inputPassword = String(password);
 
-  // 1. Secure Admin Login Verification
-  if (isValidAdminEmail(normalizedEmail) && isValidAdminPassword(inputPassword)) {
-    const adminUser = await db.getUserByEmail(normalizedEmail);
-    const adminProfile: StoredUser = {
-      id: adminUser?.id || 'adm-001',
-      firstName: adminUser?.firstName || 'Muhammad',
-      lastName: adminUser?.lastName || 'Ayan',
-      email: normalizedEmail,
-      role: 'admin',
-      isEmailVerified: true,
-      profileStatus: 'Complete',
-      avatar: adminUser?.avatar || 'MA',
-      country: adminUser?.country || 'Global',
-      languages: adminUser?.languages || ['English', 'Arabic'],
-      languageProficiency: adminUser?.languageProficiency || {
-        English: 'Native / Fluent',
-        Arabic: 'Professional Working',
-      },
-      skills: adminUser?.skills || ['Workforce Operations', 'Quality Assurance', 'Project Architecture'],
-      experience: adminUser?.experience || 'Platform Administrator & Operations Director at Nexora Workforce',
-      status: 'active',
-      createdAt: adminUser?.createdAt || '2026-09-01',
-    };
-
-    return res.json({
-      success: true,
-      role: 'admin',
-      user: adminProfile,
+  // Authenticate user directly against the database (handles both single Admin and Contributors)
+  const user = await db.getUserByEmail(normalizedEmail);
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password. Please verify your credentials and try again.',
     });
   }
 
-  // 2. Contributor Login Verification against Database
-  const contributor = await db.getUserByEmail(normalizedEmail);
-  if (contributor) {
-    // Verify password if recorded using cryptographic verification
-    if (contributor.password && !verifyPassword(inputPassword, contributor.password)) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password. Please verify your credentials and try again.',
-      });
-    }
-
-    if (contributor.status === 'suspended') {
-      return res.status(403).json({
-        success: false,
-        message: 'Your account has been suspended. Please contact platform support.',
-      });
-    }
-
-    const { password: _, ...safeUser } = contributor;
-    return res.json({
-      success: true,
-      role: contributor.role || 'contributor',
-      user: safeUser,
+  // Cryptographic password verification (scrypt hash comparison)
+  if (!user.password || !verifyPassword(inputPassword, user.password)) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password. Please verify your credentials and try again.',
     });
   }
 
-  return res.status(401).json({
-    success: false,
-    message: 'Invalid email or password. Please verify your credentials and try again.',
+  if (user.status === 'suspended') {
+    return res.status(403).json({
+      success: false,
+      message: 'Your account has been suspended. Please contact platform support.',
+    });
+  }
+
+  const { password: _, ...safeUser } = user;
+  return res.json({
+    success: true,
+    role: user.role || 'contributor',
+    user: safeUser,
   });
 });
 
@@ -179,8 +135,8 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
 
     const normalizedEmail = String(email).trim().toLowerCase();
 
-    // Prevent registration using admin email
-    if (isValidAdminEmail(normalizedEmail)) {
+    // Prevent registration using the single system administration email
+    if (normalizedEmail === CANONICAL_ADMIN_EMAIL.toLowerCase()) {
       return res.status(400).json({
         success: false,
         message: 'This email is reserved for system administration.',
