@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { PaymentTypeConfigurator } from './PaymentTypeConfigurator';
 import { formatProjectPayment, getPaymentUnitLabel } from '../../utils/paymentUtils';
+import { JobCountrySelect } from '../common/JobCountrySelect';
+import { JobCountryBadge } from '../common/JobCountryBadge';
 
 interface AdminProjectsViewProps {
   onOpenCreateProject: () => void;
@@ -56,7 +58,8 @@ export const AdminProjectsView: React.FC<AdminProjectsViewProps> = ({
     const matchSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.category.toLowerCase().includes(search.toLowerCase()) ||
-      p.language.toLowerCase().includes(search.toLowerCase());
+      p.language.toLowerCase().includes(search.toLowerCase()) ||
+      (p.country && p.country.toLowerCase().includes(search.toLowerCase()));
     const matchStatus = statusFilter === 'ALL' || p.status === statusFilter;
     const matchCategory = categoryFilter === 'ALL' || p.category === categoryFilter;
     return matchSearch && matchStatus && matchCategory;
@@ -191,6 +194,7 @@ export const AdminProjectsView: React.FC<AdminProjectsViewProps> = ({
             <thead className="bg-slate-50/80 text-[11px] uppercase tracking-wider font-semibold text-slate-500 border-b border-slate-200">
               <tr>
                 <th className="px-5 py-3">Project</th>
+                <th className="px-4 py-3">Target Location</th>
                 <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3">Language</th>
                 <th className="px-4 py-3">Compensation</th>
@@ -220,6 +224,9 @@ export const AdminProjectsView: React.FC<AdminProjectsViewProps> = ({
                     <td className="px-5 py-3.5 max-w-[240px]">
                       <div className="font-bold text-slate-900 truncate">{p.name}</div>
                       <span className="text-[10px] text-slate-400">{p.projectType}</span>
+                    </td>
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      <JobCountryBadge country={p.country} />
                     </td>
                     <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{p.category}</td>
                     <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{p.language}</td>
@@ -409,6 +416,21 @@ export const AdminProjectsView: React.FC<AdminProjectsViewProps> = ({
                   }
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                 />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Country Eligibility / Job Location
+                </label>
+                <JobCountrySelect
+                  value={editingProject.country || 'Worldwide'}
+                  onChange={(country) =>
+                    setEditingProject({ ...editingProject, country })
+                  }
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Choose 🌍 Worldwide or a specific country (e.g. Pakistan, Egypt, Germany). Informational label only — jobs remain 100% visible and open for application to all users worldwide.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

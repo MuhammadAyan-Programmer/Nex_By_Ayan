@@ -5,6 +5,7 @@ import { ALL_CATEGORIES } from '../../mockData';
 import { X, Plus, Sparkles, AlertCircle } from 'lucide-react';
 import { PaymentTypeConfigurator } from './PaymentTypeConfigurator';
 import { getPaymentUnitLabel } from '../../utils/paymentUtils';
+import { JobCountrySelect } from '../common/JobCountrySelect';
 
 interface AdminCreateProjectModalProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ export const AdminCreateProjectModal: React.FC<AdminCreateProjectModalProps> = (
   const [language, setLanguage] = useState('English');
   const [sourceLanguage, setSourceLanguage] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('');
-  const [country, setCountry] = useState('Global');
+  const [country, setCountry] = useState('Worldwide');
   const [skillsStr, setSkillsStr] = useState('');
   const [requiredContributors, setRequiredContributors] = useState<number>(1000);
   const [startDate, setStartDate] = useState('2027-01-15');
@@ -218,14 +219,16 @@ export const AdminCreateProjectModal: React.FC<AdminCreateProjectModalProps> = (
                 />
               </div>
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Target Country</label>
-                <input
-                  type="text"
-                  placeholder="Global / Specific"
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Country Eligibility / Job Location
+                </label>
+                <JobCountrySelect
                   value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  onChange={setCountry}
                 />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Choose 🌍 Worldwide or a specific country. This is an informational label — all jobs remain open and applicable worldwide.
+                </p>
               </div>
             </div>
 

@@ -375,7 +375,7 @@ apiRouter.post('/users/sync', async (req: Request, res: Response) => {
     for (const u of list) {
       if (!u || !u.email) continue;
       const normEmail = String(u.email).trim().toLowerCase();
-      if (normEmail === 'contributor@nexora.work' || u.id === 'usr-demo-01' || normEmail.includes('temp')) {
+      if (normEmail === 'contributor@nexora.work' || u.id === 'usr-demo-01') {
         continue;
       }
       await db.createUser({

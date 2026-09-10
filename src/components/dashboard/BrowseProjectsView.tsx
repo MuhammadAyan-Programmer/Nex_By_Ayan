@@ -21,6 +21,7 @@ export const BrowseProjectsView: React.FC<BrowseProjectsViewProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory || 'ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'Open' | 'Closed' | 'Completed'>('ALL');
   const [languageFilter, setLanguageFilter] = useState<string>('ALL');
+  const [countryFilter, setCountryFilter] = useState<string>('ALL');
 
   // Extract unique languages
   const languagesList = useMemo(() => {
@@ -33,6 +34,17 @@ export const BrowseProjectsView: React.FC<BrowseProjectsViewProps> = ({
     return Array.from(set).filter(Boolean);
   }, [projects]);
 
+  // Extract unique countries from projects
+  const countriesList = useMemo(() => {
+    const set = new Set<string>();
+    projects.forEach((p) => {
+      if (p.country && p.country.trim() && !['worldwide', 'global', 'all'].includes(p.country.trim().toLowerCase())) {
+        set.add(p.country.trim());
+      }
+    });
+    return Array.from(set);
+  }, [projects]);
+
   const filteredProjects = useMemo(() => {
     return projects.filter((p) => {
       // Search
@@ -40,7 +52,8 @@ export const BrowseProjectsView: React.FC<BrowseProjectsViewProps> = ({
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.skillsRequired.some((s) => s.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        p.language.toLowerCase().includes(searchQuery.toLowerCase());
+        p.language.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.country && p.country.toLowerCase().includes(searchQuery.toLowerCase()));
 
       // Category
       const matchCategory =
@@ -56,9 +69,15 @@ export const BrowseProjectsView: React.FC<BrowseProjectsViewProps> = ({
         p.sourceLanguage?.toLowerCase().includes(languageFilter.toLowerCase()) ||
         p.targetLanguage?.toLowerCase().includes(languageFilter.toLowerCase());
 
-      return matchSearch && matchCategory && matchStatus && matchLanguage;
+      // Country
+      const matchCountry =
+        countryFilter === 'ALL' ||
+        (countryFilter === 'Worldwide' && (!p.country || ['worldwide', 'global', 'all'].includes(p.country.toLowerCase()))) ||
+        (p.country && p.country.toLowerCase() === countryFilter.toLowerCase());
+
+      return matchSearch && matchCategory && matchStatus && matchLanguage && matchCountry;
     });
-  }, [projects, searchQuery, selectedCategory, statusFilter, languageFilter]);
+  }, [projects, searchQuery, selectedCategory, statusFilter, languageFilter, countryFilter]);
 
   return (
     <div className="space-y-6">
@@ -75,9 +94,22 @@ export const BrowseProjectsView: React.FC<BrowseProjectsViewProps> = ({
         </div>
       </div>
 
+      {/* Global Accessibility Banner */}
+      <div className="bg-gradient-to-r from-indigo-50/90 to-blue-50/90 border border-indigo-100 rounded-xl p-3.5 flex items-start sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-start sm:items-center gap-2.5">
+          <span className="text-xl shrink-0">🌍</span>
+          <div>
+            <span className="font-bold text-indigo-950">Worldwide Open Opportunity:</span>
+            <span className="text-indigo-900/80 ml-1">
+              Every job is open to all registered users worldwide. Country labels represent informational client targets and never restrict your ability to view or apply.
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Filter Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {/* Search */}
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -131,6 +163,23 @@ export const BrowseProjectsView: React.FC<BrowseProjectsViewProps> = ({
               {languagesList.map((lang) => (
                 <option key={lang} value={lang}>
                   {lang}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Target Country Filter */}
+          <div>
+            <select
+              value={countryFilter}
+              onChange={(e) => setCountryFilter(e.target.value)}
+              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="ALL">🌍 All Locations / Worldwide</option>
+              <option value="Worldwide">🌍 Worldwide Only</option>
+              {countriesList.map((c) => (
+                <option key={c} value={c}>
+                  📍 {c}
                 </option>
               ))}
             </select>

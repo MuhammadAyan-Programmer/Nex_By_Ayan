@@ -3,6 +3,7 @@ import { Project } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { X, ArrowRight, AlertCircle, Link, Info, Phone } from 'lucide-react';
 import { Badge } from '../common/Badge';
+import { getCountryEligibility } from '../../utils/countryUtils';
 
 interface ProjectApplicationModalProps {
   project: Project | null;
@@ -42,6 +43,8 @@ export const ProjectApplicationModal: React.FC<ProjectApplicationModalProps> = (
   }, [currentUser, project]);
 
   if (!isOpen || !project || !currentUser) return null;
+
+  const countryInfo = getCountryEligibility(project.country);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,6 +136,27 @@ export const ProjectApplicationModal: React.FC<ProjectApplicationModalProps> = (
             <Badge variant={currentUser.isEmailVerified ? 'green' : 'amber'}>
               {currentUser.isEmailVerified ? 'Verified Contributor' : 'Active Contributor'}
             </Badge>
+          </div>
+
+          {/* Target Country & Global Eligibility Notice */}
+          <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-lg flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-xl shrink-0">{countryInfo.flag}</span>
+              <div>
+                <span className="font-semibold text-slate-800">
+                  {countryInfo.isWorldwide
+                    ? '🌍 Worldwide Opportunity'
+                    : `Target Country: ${countryInfo.label}`}
+                </span>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Open worldwide to all registered contributors. Your application from{' '}
+                  <span className="font-semibold text-indigo-900">{currentUser.country || 'any country'}</span> is fully eligible.
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200 shrink-0">
+              Open to All
+            </span>
           </div>
 
           {/* Languages & Proficiency */}

@@ -15,9 +15,12 @@ import {
   Sparkles,
   Layers,
   DollarSign,
+  MapPin,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { formatProjectPayment } from '../../utils/paymentUtils';
+import { JobCountryBadge } from '../common/JobCountryBadge';
+import { getCountryEligibility } from '../../utils/countryUtils';
 
 interface ProjectDetailsModalProps {
   project: Project | null;
@@ -54,6 +57,8 @@ export const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
       )
     : null;
 
+  const countryInfo = getCountryEligibility(project.country);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 overflow-y-auto">
       <div
@@ -66,6 +71,7 @@ export const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <Badge variant="blue">{project.category}</Badge>
               <Badge variant="indigo">{project.projectType}</Badge>
+              <JobCountryBadge country={project.country} size="sm" />
               <Badge
                 variant={
                   project.status === 'Open'
@@ -81,7 +87,12 @@ export const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
               </Badge>
             </div>
             <h2 className="text-xl font-bold text-slate-900">{project.name}</h2>
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 mt-1">
+            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 mt-1.5">
+              <span className="flex items-center gap-1 font-medium text-slate-700">
+                <MapPin className="w-3.5 h-3.5 text-indigo-500" />
+                {countryInfo.fullDisplay}
+                {countryInfo.isWorldwide ? ' (Open Worldwide)' : ' (Target Country)'}
+              </span>
               <span className="flex items-center gap-1">
                 <Globe className="w-3.5 h-3.5 text-slate-400" />
                 {project.sourceLanguage && project.targetLanguage
@@ -159,6 +170,25 @@ export const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({
                 <FileCheck className="w-4 h-4 text-indigo-600" />
                 Requirements & Eligibility
               </h4>
+
+              {/* Country Eligibility Notice */}
+              <div className="p-3 bg-indigo-50/70 rounded-lg border border-indigo-100">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                    <span className="text-base">{countryInfo.flag}</span>
+                    <span>Country Eligibility: {countryInfo.label}</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                    Open Worldwide
+                  </span>
+                </div>
+                <p className="text-[11px] text-indigo-900/85 mt-1.5 leading-relaxed">
+                  {countryInfo.isWorldwide
+                    ? '🌍 This job is open worldwide to all registered users regardless of country or location.'
+                    : `Target Country: ${countryInfo.label}. Note: This is an informational client target. Registered contributors from ANY country (worldwide) are fully eligible to apply and participate.`}
+                </p>
+              </div>
+
               <div>
                 <p className="text-xs text-slate-500 font-medium">Minimum Requirement:</p>
                 <p className="text-xs font-semibold text-slate-800 mt-0.5">

@@ -21,7 +21,7 @@ export const INITIAL_PROJECTS: Project[] = [
     language: 'Arabic, English',
     sourceLanguage: 'Arabic',
     targetLanguage: 'English',
-    country: 'Global',
+    country: 'Worldwide',
     skillsRequired: [
       'Bilingual Arabic/English',
       'Modern Standard Arabic (MSA)',

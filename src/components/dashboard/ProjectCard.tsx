@@ -4,6 +4,8 @@ import { Badge } from '../common/Badge';
 import { Calendar, Users, Globe, ArrowUpRight, DollarSign } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { formatProjectPayment } from '../../utils/paymentUtils';
+import { JobCountryBadge } from '../common/JobCountryBadge';
+import { getCountryEligibility } from '../../utils/countryUtils';
 
 interface ProjectCardProps {
   project: Project;
@@ -29,6 +31,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
       )
     : null;
 
+  const countryInfo = getCountryEligibility(project.country);
+
   return (
     <div
       id={`project-card-${project.id}`}
@@ -36,10 +40,13 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
     >
       {/* Card Header & Badges */}
       <div className="p-5">
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <Badge variant="blue" size="sm">
-            {project.category}
-          </Badge>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge variant="blue" size="sm">
+              {project.category}
+            </Badge>
+            <JobCountryBadge country={project.country} size="xs" />
+          </div>
           <Badge
             variant={
               project.status === 'Open'
@@ -63,14 +70,30 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
           {project.name}
         </h3>
 
-        <p className="text-xs text-slate-500 font-medium mb-3 flex items-center gap-1.5">
-          <Globe className="w-3.5 h-3.5 text-slate-400" />
-          {project.sourceLanguage && project.targetLanguage
-            ? `${project.sourceLanguage} → ${project.targetLanguage}`
-            : project.language}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 font-medium mb-2.5">
+          <span className="flex items-center gap-1">
+            <Globe className="w-3.5 h-3.5 text-slate-400" />
+            {project.sourceLanguage && project.targetLanguage
+              ? `${project.sourceLanguage} → ${project.targetLanguage}`
+              : project.language}
+          </span>
           <span className="text-slate-300">•</span>
           <span className="text-slate-600 font-medium">{project.projectType}</span>
-        </p>
+        </div>
+
+        {/* Informational Country Eligibility Banner */}
+        <div className="flex items-center gap-1.5 mb-3 text-[11px] text-slate-600 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/80">
+          <span className="font-semibold text-slate-800 flex items-center gap-1 shrink-0">
+            <span>{countryInfo.flag}</span>
+            <span>{countryInfo.label}</span>
+          </span>
+          <span className="text-slate-300">|</span>
+          <span className="text-slate-500 text-[10px] truncate" title={countryInfo.description}>
+            {countryInfo.isWorldwide
+              ? 'Open Worldwide (All Users)'
+              : 'Target Country (Open to all countries worldwide)'}
+          </span>
+        </div>
 
         <p className="text-xs text-slate-600 line-clamp-2 mb-4 leading-relaxed">
           {project.description}

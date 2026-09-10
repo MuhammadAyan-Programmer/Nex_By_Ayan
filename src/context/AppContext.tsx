@@ -21,8 +21,21 @@ import {
   INITIAL_NOTIFICATIONS,
   INITIAL_USERS,
 } from '../mockData';
+import {
+  saveUserToFirestore,
+  fetchUsersFromFirestore,
+  subscribeToUsersFirestore,
+  saveApplicationToFirestore,
+  fetchApplicationsFromFirestore,
+  subscribeToApplicationsFirestore,
+  saveProjectToFirestore,
+  fetchProjectsFromFirestore,
+} from '../lib/firebase';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 interface AppContextType {
+  firebaseConnected: boolean;
+  firebaseProjectId: string;
   currentUser: UserProfile | null;
   setCurrentUser: (user: UserProfile | null) => void;
   login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
@@ -287,106 +300,163 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Live Server Synchronization State
+  // Live Server & Firebase Synchronization State
   const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date>(new Date());
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [firebaseConnected, setFirebaseConnected] = useState<boolean>(true);
 
   const refreshLiveServerData = useCallback(async () => {
     try {
       setIsSyncing(true);
-      const [projRes, appRes, userRes] = await Promise.all([
+      const [projRes, appRes, userRes, fbUsers, fbApps, fbProjects] = await Promise.all([
         fetch(`${API_BASE}/api/projects`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/applications`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/users`).then((r) => r.json()).catch(() => null),
+        fetchUsersFromFirestore().catch(() => [] as UserProfile[]),
+        fetchApplicationsFromFirestore().catch(() => [] as ProjectApplication[]),
+        fetchProjectsFromFirestore().catch(() => [] as Project[]),
       ]);
 
       setSyncError(null);
+      setFirebaseConnected(true);
 
-      if (projRes?.success && Array.isArray(projRes.projects) && projRes.projects.length > 0) {
+      // 1. Projects Sync
+      if (fbProjects && fbProjects.length > 0) {
+        setProjects(fbProjects);
+      } else if (projRes?.success && Array.isArray(projRes.projects) && projRes.projects.length > 0) {
         setProjects(projRes.projects);
       }
+
+      // 2. Applications Sync (Merge server, Firestore, and local)
+      const appMap = new Map<string, ProjectApplication>();
       if (appRes?.success && Array.isArray(appRes.applications)) {
-        setApplications((prev) => {
-          const map = new Map<string, ProjectApplication>();
-          for (const a of appRes.applications) {
-            map.set(a.id, a);
-          }
-          // Preserve local applications that may have been submitted offline or before server save
-          for (const a of prev) {
-            if (!map.has(a.id)) {
-              map.set(a.id, a);
-              // Push to server in background
-              fetch(`${API_BASE}/api/applications`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(a),
-              }).catch(() => {});
-            }
-          }
-          return Array.from(map.values());
-        });
+        for (const a of appRes.applications) appMap.set(a.id, a);
       }
+      if (fbApps && Array.isArray(fbApps)) {
+        for (const a of fbApps) appMap.set(a.id, a);
+      }
+      setApplications((prev) => {
+        for (const a of prev) {
+          if (!appMap.has(a.id)) {
+            appMap.set(a.id, a);
+            // Background sync
+            saveApplicationToFirestore(a).catch(() => {});
+            fetch(`${API_BASE}/api/applications`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(a),
+            }).catch(() => {});
+          }
+        }
+        const merged = Array.from(appMap.values());
+        saveStorage('applications', merged);
+        return merged;
+      });
+
+      // 3. Users Sync (Merge Firestore, backend API, and local users)
+      const userMap = new Map<string, UserProfile>();
+      
+      // Add server users
       if (userRes?.success && Array.isArray(userRes.users)) {
-        const cleanUsers = userRes.users.filter(
-          (u: any) =>
-            u.id !== 'usr-demo-01' &&
-            u.email.toLowerCase() !== 'contributor@nexora.work'
-        );
-        setUsers((prev) => {
-          const map = new Map<string, UserProfile>();
-          for (const u of cleanUsers) {
-            map.set(u.id, u);
+        for (const u of userRes.users) {
+          if (u && u.id && u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
+            userMap.set(u.id, u);
           }
-          for (const u of prev) {
-            if (
-              u.id !== 'usr-demo-01' &&
-              u.email.toLowerCase() !== 'contributor@nexora.work'
-            ) {
-              if (!map.has(u.id)) {
-                map.set(u.id, u);
-                // Push local user to server in background
-                const storedPass = getLocalPassword(u.email);
-                if (storedPass) {
-                  fetch(`${API_BASE}/api/auth/register`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      firstName: u.firstName,
-                      lastName: u.lastName,
-                      email: u.email,
-                      password: storedPass,
-                      country: u.country,
-                      primaryLanguage: u.languages[0],
-                    }),
-                  }).catch(() => {});
-                }
-              }
+        }
+      }
+
+      // Add authoritative Firebase users
+      if (fbUsers && Array.isArray(fbUsers)) {
+        for (const u of fbUsers) {
+          if (u && u.id && u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
+            userMap.set(u.id, u);
+          }
+        }
+      }
+
+      // Merge with current state (so freshly registered users are never dropped)
+      setUsers((prev) => {
+        for (const u of prev) {
+          if (u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
+            if (!userMap.has(u.id)) {
+              userMap.set(u.id, u);
+              // Backfill into Firebase
+              saveUserToFirestore(u).catch(() => {});
             }
           }
-          return Array.from(map.values());
-        });
-      }
+        }
+        const merged = Array.from(userMap.values());
+        saveStorage('users', merged);
+        return merged;
+      });
+
       setLastSyncedAt(new Date());
     } catch (err) {
       console.warn('Sync error:', err);
-      // Do not block UI if local data exists
       setSyncError(null);
     } finally {
       setIsSyncing(false);
     }
   }, [API_BASE]);
 
-  // Fetch live projects, applications, and users from backend server and setup polling
+  // Fetch live projects, applications, and users, and setup Firestore real-time listeners
   useEffect(() => {
-    // Initial fetch from central database
+    // Initial fetch from central database & Firebase
     refreshLiveServerData();
 
-    // Live auto-polling every 4 seconds so admin sees new applicants and status changes instantly
+    // 1. Firebase Firestore Real-Time Listener for Users
+    const unsubscribeUsers = subscribeToUsersFirestore(
+      (fbUsers) => {
+        if (fbUsers && fbUsers.length > 0) {
+          setFirebaseConnected(true);
+          setUsers((prev) => {
+            const map = new Map<string, UserProfile>();
+            for (const u of prev) {
+              if (u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
+                map.set(u.id, u);
+              }
+            }
+            for (const u of fbUsers) {
+              if (u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
+                map.set(u.id, u);
+              }
+            }
+            const merged = Array.from(map.values());
+            saveStorage('users', merged);
+            return merged;
+          });
+        }
+      },
+      (err) => {
+        console.warn('Firestore users subscription notice:', err);
+      }
+    );
+
+    // 2. Firebase Firestore Real-Time Listener for Applications
+    const unsubscribeApps = subscribeToApplicationsFirestore(
+      (fbApps) => {
+        if (fbApps && fbApps.length > 0) {
+          setApplications((prev) => {
+            const map = new Map<string, ProjectApplication>();
+            for (const a of prev) map.set(a.id, a);
+            for (const a of fbApps) map.set(a.id, a);
+            const merged = Array.from(map.values());
+            saveStorage('applications', merged);
+            return merged;
+          });
+        }
+      },
+      (err) => {
+        console.warn('Firestore apps subscription notice:', err);
+      }
+    );
+
+    // Periodic polling as secondary fallback
     const pollInterval = setInterval(() => {
       refreshLiveServerData();
-    }, 4000);
+    }, 6000);
 
     const handleFocus = () => {
       refreshLiveServerData();
@@ -394,6 +464,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.addEventListener('focus', handleFocus);
 
     return () => {
+      unsubscribeUsers();
+      unsubscribeApps();
       clearInterval(pollInterval);
       window.removeEventListener('focus', handleFocus);
     };
@@ -602,8 +674,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCurrentUserState(result.user);
           setUsers((prev) => {
             const exists = prev.some((u) => u.email.toLowerCase() === normEmail);
-            return exists ? prev.map((u) => (u.email.toLowerCase() === normEmail ? result.user : u)) : [...prev, result.user];
+            const next = exists ? prev.map((u) => (u.email.toLowerCase() === normEmail ? result.user : u)) : [...prev, result.user];
+            saveStorage('users', next);
+            return next;
           });
+          // Immediately persist to Firebase Firestore
+          saveUserToFirestore(result.user).catch((e) => console.warn('Firestore user save notice:', e));
           return {
             success: true,
             message: result.message || 'Account registered successfully! Welcome to Nexora Workforce.',
@@ -655,6 +731,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveStorage('users', next);
         return next;
       });
+
+      // Immediately persist to Firebase Firestore
+      saveUserToFirestore(localUser).catch((e) => console.warn('Firestore fallback user save notice:', e));
 
       // Schedule background sync once server is responsive
       setTimeout(() => {
@@ -717,32 +796,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // User management for admin
   const toggleUserStatus = (id: string) => {
-    setUsers((prev) =>
-      prev.map((u) => {
+    setUsers((prev) => {
+      const next = prev.map((u) => {
         if (u.id === id) {
           const nextStatus = u.status === 'active' ? 'suspended' : 'active';
-          return { ...u, status: nextStatus };
+          const updated = { ...u, status: nextStatus };
+          saveUserToFirestore(updated).catch(() => {});
+          return updated;
         }
         return u;
-      })
-    );
+      });
+      saveStorage('users', next);
+      return next;
+    });
     fetch(`${API_BASE}/api/users/${id}/status`, { method: 'PATCH' }).catch(() => {});
   };
 
   const toggleEmailVerification = (id: string) => {
-    setUsers((prev) =>
-      prev.map((u) => {
+    setUsers((prev) => {
+      const next = prev.map((u) => {
         if (u.id === id) {
           const nextVerified = !u.isEmailVerified;
-          return {
+          const updated = {
             ...u,
             isEmailVerified: nextVerified,
-            profileStatus: nextVerified ? 'Complete' : 'Incomplete',
+            profileStatus: (nextVerified ? 'Complete' : 'Incomplete') as 'Complete' | 'Incomplete',
           };
+          saveUserToFirestore(updated).catch(() => {});
+          return updated;
         }
         return u;
-      })
-    );
+      });
+      saveStorage('users', next);
+      return next;
+    });
     fetch(`${API_BASE}/api/users/${id}/verify-email`, { method: 'PATCH' }).catch(() => {});
   };
 
@@ -897,6 +984,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
 
+    // Save directly to Firebase Firestore
+    saveApplicationToFirestore(newApp).catch((e) => console.warn('Firestore application save notice:', e));
+
     // Also update project applicant counter locally
     setProjects((prev) =>
       prev.map((p) =>
@@ -961,18 +1051,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const prevStatus = targetApp.status;
 
-    setApplications((prev) =>
-      prev.map((app) =>
-        app.id === id
-          ? {
-              ...app,
-              status,
-              notes: notes !== undefined ? notes : app.notes,
-              reviewedDate: new Date().toISOString().split('T')[0],
-            }
-          : app
-      )
-    );
+    const updatedApp: ProjectApplication = {
+      ...targetApp,
+      status,
+      notes: notes !== undefined ? notes : targetApp.notes,
+      reviewedDate: new Date().toISOString().split('T')[0],
+    };
+
+    setApplications((prev) => {
+      const next = prev.map((app) => (app.id === id ? updatedApp : app));
+      saveStorage('applications', next);
+      return next;
+    });
+
+    saveApplicationToFirestore(updatedApp).catch((e) => console.warn('Firestore update app error:', e));
 
     // Call server to persist application status and recalculate capacity
     try {
@@ -1438,6 +1530,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markAllNotificationsRead,
 
         userBalance,
+        firebaseConnected,
+        firebaseProjectId: firebaseConfig.projectId,
       }}
     >
       {children}

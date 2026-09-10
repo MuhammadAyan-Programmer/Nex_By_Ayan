@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { UserTab } from './UserSidebar';
 import { getProjectDisplayRate, getPaymentTypeBadgeInfo } from '../../utils/paymentUtils';
+import { JobCountryBadge } from '../common/JobCountryBadge';
 
 interface ActiveProjectsViewProps {
   onViewProject: (project: Project) => void;
@@ -89,6 +90,7 @@ export const ActiveProjectsView: React.FC<ActiveProjectsViewProps> = ({
                   <div>
                     <div className="flex flex-wrap items-center gap-2 mb-1.5">
                       <Badge variant="blue">{project.category}</Badge>
+                      <JobCountryBadge country={project.country} size="xs" />
                       {project.status === 'Completed' ? (
                         <Badge variant="purple">● Completed</Badge>
                       ) : project.status === 'Closed' ? (

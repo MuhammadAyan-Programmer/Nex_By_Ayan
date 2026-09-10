@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Health / connection test doc
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    // Users collection for Nexora Workforce contributors and administrators
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
+    // Project applications submitted by contributors
+    match /applications/{applicationId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
+    // Workforce projects
+    match /projects/{projectId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+  }
+}

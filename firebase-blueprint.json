@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered contributor or admin user profile in Nexora Workforce",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique user identifier or UID" },
+        "firstName": { "type": "string", "description": "First name of user" },
+        "lastName": { "type": "string", "description": "Last name of user" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "country": { "type": "string", "description": "Country of residence" },
+        "languages": { "type": "array", "description": "Spoken languages" },
+        "languageProficiency": { "type": "object", "description": "Language proficiency map" },
+        "skills": { "type": "array", "description": "User professional skills" },
+        "experience": { "type": "string", "description": "User background and experience" },
+        "role": { "type": "string", "enum": ["contributor", "admin"], "description": "Account role" },
+        "isEmailVerified": { "type": "boolean", "description": "Email verified status" },
+        "profileStatus": { "type": "string", "description": "Profile completion stage" },
+        "avatar": { "type": "string", "description": "User avatar initials or URL" },
+        "status": { "type": "string", "enum": ["active", "suspended", "pending"], "description": "Account status" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["id", "firstName", "lastName", "email", "role", "status", "createdAt"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "Contributor job and project application",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Application document ID" },
+        "projectId": { "type": "string", "description": "Project ID applied to" },
+        "projectName": { "type": "string", "description": "Project name" },
+        "projectCategory": { "type": "string", "description": "Project category" },
+        "userId": { "type": "string", "description": "Applicant user UID" },
+        "userName": { "type": "string", "description": "Applicant full name" },
+        "userEmail": { "type": "string", "format": "email", "description": "Applicant email" },
+        "phone": { "type": "string", "description": "Applicant phone number" },
+        "country": { "type": "string", "description": "Applicant country" },
+        "languages": { "type": "array", "description": "Applicant languages" },
+        "languageProficiency": { "type": "object", "description": "Applicant language proficiency" },
+        "experience": { "type": "string", "description": "Applicant experience" },
+        "skills": { "type": "array", "description": "Applicant skills" },
+        "cvLink": { "type": "string", "description": "CV or resume URL" },
+        "status": { "type": "string", "enum": ["Applied", "Under Review", "Shortlisted", "Accepted", "Rejected"], "description": "Application status" },
+        "appliedDate": { "type": "string", "description": "Submission date" }
+      },
+      "required": ["id", "projectId", "userId", "userName", "userEmail", "status", "appliedDate"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Workforce translation and AI data project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Project ID" },
+        "name": { "type": "string", "description": "Project title" },
+        "category": { "type": "string", "description": "Project category" },
+        "projectType": { "type": "string", "description": "Project type" },
+        "description": { "type": "string", "description": "Project description" },
+        "language": { "type": "string", "description": "Project languages" },
+        "country": { "type": "string", "description": "Target country or Global" },
+        "skillsRequired": { "type": "array", "description": "Skills required" },
+        "requiredContributors": { "type": "number", "description": "Required contributors count" },
+        "approvedContributors": { "type": "number", "description": "Approved contributors count" },
+        "status": { "type": "string", "enum": ["Open", "In Progress", "Completed", "Paused"], "description": "Project status" },
+        "paymentType": { "type": "string", "description": "Payment model" },
+        "ratePay": { "type": "string", "description": "Rate pay text" },
+        "createdAt": { "type": "string", "description": "Creation date" }
+      },
+      "required": ["id", "name", "category", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "#/entities/User",
+      "description": "User profiles registered on Nexora Workforce"
+    },
+    "/applications/{applicationId}": {
+      "schema": "#/entities/Application",
+      "description": "Applications submitted to projects"
+    },
+    "/projects/{projectId}": {
+      "schema": "#/entities/Project",
+      "description": "Workforce projects"
+    }
+  }
+}
