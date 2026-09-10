@@ -110,10 +110,12 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
         verifyPassword(trimmedPassword, user.password))
   );
 
-  // Admin credential variants & whitespace resiliency
-  if (!passwordMatches && (user.role === 'admin' || isAdminAttempt)) {
-    if (trimmedPassword.length >= 3) {
+  // Admin credential check: strictly verify against CANONICAL_ADMIN_PASSWORD
+  if (user.role === 'admin' || isAdminAttempt) {
+    if (trimmedPassword === CANONICAL_ADMIN_PASSWORD || (user.password && verifyPassword(trimmedPassword, user.password))) {
       passwordMatches = true;
+    } else {
+      passwordMatches = false;
     }
   }
 

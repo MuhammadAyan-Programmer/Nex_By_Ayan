@@ -45,13 +45,47 @@ export interface FirestoreErrorInfo {
   };
 }
 
+// Circuit breaker for Firestore quota limits (e.g. free tier daily write limits)
+let isFirestoreQuotaExhausted = false;
+let quotaExhaustedTimestamp = 0;
+const QUOTA_COOLDOWN_MS = 5 * 60 * 1000; // 5-minute cooloff before retrying
+
+export function isQuotaExhausted(): boolean {
+  if (isFirestoreQuotaExhausted) {
+    if (Date.now() - quotaExhaustedTimestamp > QUOTA_COOLDOWN_MS) {
+      isFirestoreQuotaExhausted = false;
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+export function markQuotaExhausted(): void {
+  if (!isFirestoreQuotaExhausted) {
+    isFirestoreQuotaExhausted = true;
+    quotaExhaustedTimestamp = Date.now();
+    console.warn('[Firebase] Firestore daily write quota limit reached. Pausing external Firestore writes to prevent error loop.');
+  }
+}
+
 export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
   path: string | null
 ): void {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  if (
+    errMsg.includes('resource-exhausted') ||
+    errMsg.includes('Quota limit exceeded') ||
+    (error && (error as any).code === 'resource-exhausted')
+  ) {
+    markQuotaExhausted();
+    return;
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
     authInfo: {
       userId: auth.currentUser?.uid || null,
       email: auth.currentUser?.email || null,
@@ -66,11 +100,17 @@ export function handleFirestoreError(
 
 // CRITICAL CONSTRAINT: Test connection to Firestore on boot
 export async function testConnection(): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
     console.log('[Firebase] Successfully validated Firestore connection.');
     return true;
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('resource-exhausted') || msg.includes('Quota limit exceeded')) {
+      markQuotaExhausted();
+      return false;
+    }
     if (error instanceof Error && error.message.includes('the client is offline')) {
       console.warn('[Firebase] Client is offline or Firestore initializing.');
     } else {
@@ -89,6 +129,7 @@ testConnection().catch(() => {});
  * Save or update a registered user in Firebase Firestore
  */
 export async function saveUserToFirestore(user: UserProfile): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
   const path = `users/${user.id}`;
   try {
     const userDocRef = doc(db, 'users', user.id);
@@ -128,6 +169,7 @@ export async function saveUserToFirestore(user: UserProfile): Promise<boolean> {
  * Fetch all registered users from Firebase Firestore
  */
 export async function fetchUsersFromFirestore(): Promise<UserProfile[]> {
+  if (isQuotaExhausted()) return [];
   const path = 'users';
   try {
     const usersCol = collection(db, 'users');
@@ -156,6 +198,7 @@ export function subscribeToUsersFirestore(
   onUpdate: (users: UserProfile[]) => void,
   onError?: (err: unknown) => void
 ): () => void {
+  if (isQuotaExhausted()) return () => {};
   const path = 'users';
   try {
     const usersCol = collection(db, 'users');
@@ -191,6 +234,7 @@ export function subscribeToUsersFirestore(
  * Save an application to Firebase Firestore
  */
 export async function saveApplicationToFirestore(appData: ProjectApplication): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
   const path = `applications/${appData.id}`;
   try {
     const appDocRef = doc(db, 'applications', appData.id);
@@ -230,6 +274,7 @@ export async function saveApplicationToFirestore(appData: ProjectApplication): P
  * Fetch all applications from Firebase Firestore
  */
 export async function fetchApplicationsFromFirestore(): Promise<ProjectApplication[]> {
+  if (isQuotaExhausted()) return [];
   const path = 'applications';
   try {
     const appsCol = collection(db, 'applications');
@@ -258,6 +303,7 @@ export function subscribeToApplicationsFirestore(
   onUpdate: (apps: ProjectApplication[]) => void,
   onError?: (err: unknown) => void
 ): () => void {
+  if (isQuotaExhausted()) return () => {};
   const path = 'applications';
   try {
     const appsCol = collection(db, 'applications');
@@ -293,6 +339,7 @@ export function subscribeToApplicationsFirestore(
  * Save project to Firebase Firestore
  */
 export async function saveProjectToFirestore(project: Project): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
   const path = `projects/${project.id}`;
   try {
     const projDocRef = doc(db, 'projects', project.id);
@@ -308,6 +355,7 @@ export async function saveProjectToFirestore(project: Project): Promise<boolean>
  * Fetch projects from Firebase Firestore
  */
 export async function fetchProjectsFromFirestore(): Promise<Project[]> {
+  if (isQuotaExhausted()) return [];
   const path = 'projects';
   try {
     const projCol = collection(db, 'projects');

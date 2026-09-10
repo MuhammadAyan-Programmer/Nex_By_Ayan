@@ -1,5 +1,30 @@
 [
   {
+    "id": "usr-18797",
+    "firstName": "M",
+    "lastName": "a",
+    "email": "sahfiquetolokakin1g@gmail.com",
+    "password": "329ea8cebb97361f9603d62be9c46a98:e006104e7cf601ac517d1a041a71e3c0090f10097d2cdda0a518457666542e0af6d2ecf9b6cbd31be74c9e1877ea4c519f64b8a9a0e867b01ca269f922cffdf0",
+    "phone": "",
+    "country": "United States",
+    "languages": [
+      "English"
+    ],
+    "languageProficiency": {
+      "English": "Native / Fluent"
+    },
+    "skills": [
+      "Translation & Localization"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "role": "contributor",
+    "isEmailVerified": true,
+    "profileStatus": "Complete",
+    "avatar": "MA",
+    "status": "active",
+    "createdAt": "2026-09-10"
+  },
+  {
     "id": "usr-13269",
     "firstName": "Ayan",
     "lastName": "Muhammad",
@@ -54,7 +79,7 @@
     "firstName": "Admin",
     "lastName": "Nexora",
     "email": "admin@nexora.ai",
-    "password": "5fdae89bf798416a27b77fd6bf632014:2ad386e2138dbefa7b9cc3f3ac686a5c99a4a6dcfc81b9fa1b5940dfe4fbda945ef688fb4bd9e87a70c36f97c104cd18eef570e0f6710e67ac187f510028f9c8",
+    "password": "6ed38e9f43a6f21d3c1de7d4030fa7be:14c84f803ae0dcdabda1aaae022c026661ef18e99a9297f846bfcf84ee4daea3e9dd1724f3da3b1b826acb4b9a482f535948d6b3de6e0cc669f35ea14adec2db",
     "role": "admin",
     "isEmailVerified": true,
     "profileStatus": "Complete",

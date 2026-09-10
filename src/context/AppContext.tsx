@@ -341,13 +341,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         for (const a of prev) {
           if (!appMap.has(a.id)) {
             appMap.set(a.id, a);
-            // Background sync
-            saveApplicationToFirestore(a).catch(() => {});
-            fetch(`${API_BASE}/api/applications`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(a),
-            }).catch(() => {});
           }
         }
         const merged = Array.from(appMap.values());
@@ -382,8 +375,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
             if (!userMap.has(u.id)) {
               userMap.set(u.id, u);
-              // Backfill into Firebase
-              saveUserToFirestore(u).catch(() => {});
             }
           }
         }
@@ -453,10 +444,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     );
 
-    // Periodic polling as secondary fallback
+    // Periodic polling as secondary fallback (every 60s)
     const pollInterval = setInterval(() => {
       refreshLiveServerData();
-    }, 6000);
+    }, 60000);
 
     const handleFocus = () => {
       refreshLiveServerData();
@@ -490,37 +481,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       normEmail === '03004292351muhammadayan@gmail.com' ||
       normEmail.startsWith('admin@');
 
-    // Admin direct authentication guarantee (works both on live deployment and dev)
-    if (isLocalAdminEmail && cleanPassword.length >= 3) {
-      const adminProfile: UserProfile = {
-        id: 'admin-001',
-        firstName: 'Admin',
-        lastName: 'Nexora',
-        email: 'admin@nexora.ai',
-        phone: '',
-        role: 'admin',
-        isEmailVerified: true,
-        profileStatus: 'Complete',
-        avatar: 'AN',
-        country: 'Global',
-        languages: ['English', 'Arabic'],
-        languageProficiency: { English: 'Native / Fluent', Arabic: 'Professional Working' },
-        skills: ['Workforce Operations', 'Quality Assurance', 'Project Architecture'],
-        experience: 'Platform Administrator & Operations Director at Nexora Workforce',
-        status: 'active',
-        createdAt: '2026-09-01',
-      };
-      saveLocalPassword(normEmail, cleanPassword);
-      setCurrentUserState(adminProfile);
+    // Admin direct authentication guarantee (strictly requires ChAyan726@)
+    if (isLocalAdminEmail) {
+      if (cleanPassword === 'ChAyan726@') {
+        const adminProfile: UserProfile = {
+          id: 'admin-001',
+          firstName: 'Admin',
+          lastName: 'Nexora',
+          email: 'admin@nexora.ai',
+          phone: '',
+          role: 'admin',
+          isEmailVerified: true,
+          profileStatus: 'Complete',
+          avatar: 'AN',
+          country: 'Global',
+          languages: ['English', 'Arabic'],
+          languageProficiency: { English: 'Native / Fluent', Arabic: 'Professional Working' },
+          skills: ['Workforce Operations', 'Quality Assurance', 'Project Architecture'],
+          experience: 'Platform Administrator & Operations Director at Nexora Workforce',
+          status: 'active',
+          createdAt: '2026-09-01',
+        };
+        saveLocalPassword(normEmail, cleanPassword);
+        setCurrentUserState(adminProfile);
 
-      // Keep server in sync in background
-      fetch(`${API_BASE}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normEmail, password: cleanPassword }),
-      }).catch(() => {});
+        // Keep server in sync in background
+        fetch(`${API_BASE}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: normEmail, password: cleanPassword }),
+        }).catch(() => {});
 
-      return { success: true };
+        return { success: true };
+      } else {
+        return {
+          success: false,
+          message: 'Invalid email or password. Please verify your credentials and try again.',
+        };
+      }
     }
 
     try {

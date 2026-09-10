@@ -148,22 +148,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               /* UNIFIED LOGIN: ONLY Email, Password, and [LOGIN] */
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-semibold text-slate-800">
-                      Email
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEmail('admin@nexora.ai');
-                        setPassword('Admin1@');
-                        setError(null);
-                      }}
-                      className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
-                    >
-                      Fill Admin Credentials
-                    </button>
-                  </div>
+                  <label className="block text-xs font-semibold text-slate-800 mb-1.5">
+                    Email
+                  </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                     <input

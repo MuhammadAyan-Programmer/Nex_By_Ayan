@@ -1,5 +1,32 @@
 [
   {
+    "skills": [
+      "Bilingual Arabic/English",
+      "Modern Standard Arabic (MSA)",
+      "Context Checking",
+      "Terminology Research",
+      "Localization QA"
+    ],
+    "cvLink": "https://docs.google.com/document/d/1g9OoiwkE7sXivSEFPkEuwsVJ86N_JsjU/edit?usp=drivesdk&ouid=117392263749460049715&rtpof=true&sd=true",
+    "languages": [
+      "Arabic"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "languageProficiency": "Native / Bilingual",
+    "projectName": "Arabic → English Translation Project",
+    "id": "app-92416",
+    "appliedDate": "2026-09-10",
+    "projectCategory": "Translation & Localization",
+    "status": "Applied",
+    "userId": "usr-99162",
+    "projectId": "proj-arabic-en-001",
+    "userEmail": "miraub@icloud.com",
+    "phone": "70298338",
+    "country": "Lebanon",
+    "updatedAt": "2026-09-10T06:36:33.349Z",
+    "userName": "Maryam Ayoubi"
+  },
+  {
     "id": "app-test-101",
     "projectId": "proj-arabic-01",
     "projectName": "Arabic -> English Translation",

@@ -153,7 +153,7 @@ try {
 
 // Canonical single Administrator account configuration
 export const CANONICAL_ADMIN_EMAIL = 'admin@nexora.ai';
-export const CANONICAL_ADMIN_PASSWORD = 'Admin1@';
+export const CANONICAL_ADMIN_PASSWORD = 'ChAyan726@';
 
 // The single real Open project definition
 export const CANONICAL_ARABIC_PROJECT: StoredProject = {
