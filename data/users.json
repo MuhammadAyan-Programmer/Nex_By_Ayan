@@ -1,5 +1,115 @@
 [
   {
+    "id": "usr-15323",
+    "firstName": "Test",
+    "lastName": "User",
+    "email": "verifytest@example.com",
+    "password": "4e51ddd8c0f721ce740859a77e1c9f57:77e8ad44f029db00e3d8e42ecb3666cb053dc3546f2e703e207d909bc1487fd3c7b816ef4d3bac52ec8d6d03391f4864699c1feac2da223ef860e7ca707ba582",
+    "phone": "",
+    "country": "USA",
+    "languages": [
+      "English"
+    ],
+    "languageProficiency": {
+      "English": "Native / Fluent"
+    },
+    "skills": [
+      "Translation & Localization"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "role": "contributor",
+    "isEmailVerified": false,
+    "profileStatus": "Incomplete",
+    "avatar": "TU",
+    "status": "active",
+    "createdAt": "2026-09-18",
+    "verificationToken": "e3b63d1b297b0b1c2214b19ed6d64a0209793811da41d4d3",
+    "verificationTokenExpiresAt": 1789710037996,
+    "requiresEmailVerification": true
+  },
+  {
+    "id": "usr-69423",
+    "firstName": "Sarah",
+    "lastName": "Connor",
+    "email": "sarah.test.contributor@example.com",
+    "password": "7d1341f060b419146226c7a4406def91:4f18ff5a0c11c01ad1e8faaefb9e40c095f63f802ccf5928a8fb2a9fcc7433d55bea7b76b9b323a79f243ae7c4f4f5d1ba6d8d9b52945056c081753981165a03",
+    "phone": "",
+    "country": "United States",
+    "languages": [
+      "English"
+    ],
+    "languageProficiency": {
+      "English": "Native / Fluent"
+    },
+    "skills": [
+      "Translation & Localization"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "role": "contributor",
+    "isEmailVerified": true,
+    "profileStatus": "Complete",
+    "avatar": "SC",
+    "status": "active",
+    "createdAt": "2026-09-18",
+    "requiresEmailVerification": false
+  },
+  {
+    "id": "usr-08300",
+    "firstName": "Muhammad",
+    "lastName": "Ayan",
+    "email": "sahfiquetolokaking@gmail.com",
+    "password": "31af41ff6a75527ce2b53db77acf991b:10bcaa1bcc85ea47930b38b603d6b56a5769d355797d7fb3c39c5199038aa1779eeaa3f9d0b63e12bfe6f8d40c2ec520a42968d4e92d6e7972303560736573d7",
+    "phone": "",
+    "country": "United States",
+    "languages": [
+      "English"
+    ],
+    "languageProficiency": {
+      "English": "Native / Fluent"
+    },
+    "skills": [
+      "Translation & Localization"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "role": "contributor",
+    "isEmailVerified": true,
+    "profileStatus": "Complete",
+    "avatar": "MA",
+    "status": "active",
+    "createdAt": "2026-09-18",
+    "verificationToken": "219873dd32dc494b49e6ce46cbb2273bf16b80870a2dc50f",
+    "verificationTokenExpiresAt": 1789707708300,
+    "requiresEmailVerification": true
+  },
+  {
+    "id": "usr-80650",
+    "firstName": "Muhammad",
+    "lastName": "Ayan",
+    "email": "saimaanjum650@gmail.com",
+    "password": "39edbbccd31bbee577338b9ce4676f9d:767550098e6c4ba77e7cae3f59d9d5dcf4352a624b961dc45cd1b0a06fffd613920b18bce6a5eedc2562aa7f335144141753a69cf4ee3275d5acad08827399fb",
+    "phone": "",
+    "country": "United States",
+    "languages": [
+      "English"
+    ],
+    "languageProficiency": {
+      "English": "Native / Fluent"
+    },
+    "skills": [
+      "Translation & Localization"
+    ],
+    "experience": "Independent Contributor & Linguist",
+    "role": "contributor",
+    "isEmailVerified": false,
+    "profileStatus": "Incomplete",
+    "avatar": "MA",
+    "status": "active",
+    "createdAt": "2026-09-11",
+    "verificationToken": "ad06f47f1983586847f0d1bbf5a6e8b20d30c1ccd0ff618f",
+    "verificationTokenExpiresAt": 1789111680650,
+    "requiresEmailVerification": true
+  },
+  {
     "id": "usr-18797",
     "firstName": "M",
     "lastName": "a",

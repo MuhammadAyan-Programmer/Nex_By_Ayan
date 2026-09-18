@@ -15,6 +15,12 @@ import type {
   StoredApplication,
   StoredProjectUpdate,
 } from './server/db.ts';
+import {
+  sendVerificationEmail,
+  getSafeEmailConfig,
+  saveStoredEmailConfig,
+  testEmailConnection,
+} from './server/emailService.ts';
 
 dotenv.config();
 
@@ -140,12 +146,122 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
     });
   }
 
+  // Rule 8: Only verified users can log in and access the Contributor Dashboard.
+  // Rule 9: If an unverified user tries to log in, block dashboard access and show:
+  // "Please verify your email address before continuing."
+  const isVerified = (user.emailVerified ?? user.isEmailVerified) === true;
+  if (user.role !== 'admin' && !isVerified) {
+    return res.status(403).json({
+      success: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      email: user.email,
+      message: 'Please verify your email address before continuing.',
+    });
+  }
+
   const { password: _, ...safeUser } = user;
   return res.json({
     success: true,
     role: user.role || 'contributor',
     user: safeUser,
   });
+});
+
+// Verification Token Endpoint (supports both /auth/verify-token and /auth/verify-email)
+const handleVerifyToken = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Verification token is required.',
+      });
+    }
+
+    const result = await db.verifyEmailByToken(String(token));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error('Verify token error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to verify email token.',
+    });
+  }
+};
+apiRouter.post('/auth/verify-token', handleVerifyToken);
+apiRouter.post('/auth/verify-email', handleVerifyToken);
+
+// Resend Verification Email Endpoint
+apiRouter.post('/auth/resend-verification', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email address is required to resend verification.',
+      });
+    }
+
+    const norm = String(email).trim().toLowerCase();
+    const user = await db.getUserByEmail(norm);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email address.',
+      });
+    }
+
+    if (user.isEmailVerified) {
+      return res.json({
+        success: true,
+        alreadyVerified: true,
+        message: 'Your email is already verified. You can log in immediately.',
+      });
+    }
+
+    const tokenData = await db.createVerificationToken(norm);
+    if (!tokenData) {
+      return res.status(500).json({
+        success: false,
+        message: 'Could not generate verification token.',
+      });
+    }
+
+    const emailResult = await sendVerificationEmail({
+      toEmail: norm,
+      recipientName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Contributor',
+      verificationToken: tokenData.token,
+      expiresAt: tokenData.expiresAt,
+      reqHost: req.get('host'),
+      reqProtocol: req.protocol,
+    });
+
+    return res.json({
+      success: true,
+      email: norm,
+      expiresAt: tokenData.expiresAt,
+      emailSent: emailResult.success,
+      emailProvider: emailResult.provider,
+      emailError: emailResult.error,
+      verificationToken: emailResult.success ? undefined : tokenData.token,
+      message: emailResult.success
+        ? `A new verification email has been sent to your inbox (${norm}). Please click the link to activate your account.`
+        : (emailResult.error
+            ? `New verification link generated! Note: Delivery failed (${emailResult.error}). Please check your SMTP settings in Settings panel.`
+            : `We've sent a verification email to your registered email. Please verify your email to activate your account.`),
+    });
+  } catch (err: any) {
+    console.error('Resend verification error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to resend verification email.',
+    });
+  }
 });
 
 // Registration Endpoint for new contributors (Section 6)
@@ -181,18 +297,9 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
       });
     }
 
-    // Check for existing registration in database
+    // Check for existing registration in database - never automatically log in
     const existing = await db.getUserByEmail(normalizedEmail);
     if (existing) {
-      if (verifyPassword(String(password), existing.password)) {
-        const { password: _, ...safeUser } = existing;
-        return res.json({
-          success: true,
-          user: safeUser,
-          message: 'Welcome back! Your account has been loaded.',
-        });
-      }
-
       return res.status(400).json({
         success: false,
         message: 'An account with this email address already exists. Please log in.',
@@ -201,6 +308,11 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
 
     const selectedCountry = country && String(country).trim() ? String(country).trim() : 'United States';
     const selectedLanguage = primaryLanguage && String(primaryLanguage).trim() ? String(primaryLanguage).trim() : 'English';
+
+    // Generate secure 5-minute verification token
+    const cryptoModule = await import('crypto');
+    const verificationToken = cryptoModule.randomBytes(24).toString('hex');
+    const verificationTokenExpiresAt = Date.now() + 5 * 60 * 1000; // Exact 5-minute expiry
 
     const newUser: StoredUser = {
       id: `usr-${Date.now().toString().slice(-5)}`,
@@ -219,19 +331,44 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
       cvLink: cvLink ? String(cvLink).trim() : undefined,
       role: 'contributor',
       isEmailVerified: false,
+      emailVerified: false,
       profileStatus: 'Incomplete',
       avatar: (String(firstName)[0] || 'U').toUpperCase() + (String(lastName)[0] || 'C').toUpperCase(),
       status: 'active',
       createdAt: new Date().toISOString().split('T')[0],
+      verificationToken,
+      verificationTokenExpiresAt,
+      requiresEmailVerification: true,
     };
 
     await db.createUser(newUser);
 
-    const { password: _, ...safeUser } = newUser;
+    // Dispatch real email verification to user's inbox
+    const emailResult = await sendVerificationEmail({
+      toEmail: normalizedEmail,
+      recipientName: `${firstName} ${lastName}`.trim(),
+      verificationToken,
+      expiresAt: verificationTokenExpiresAt,
+      reqHost: req.get('host'),
+      reqProtocol: req.protocol,
+    });
+
+    // Rule 3: DO NOT automatically log the user into the dashboard after registration.
+    // Return requiresVerification with token details for countdown UI, but NO user session.
     return res.json({
       success: true,
-      user: safeUser,
-      message: 'Account registered successfully! Welcome to Nexora Workforce.',
+      requiresVerification: true,
+      email: normalizedEmail,
+      expiresAt: verificationTokenExpiresAt,
+      emailSent: emailResult.success,
+      emailProvider: emailResult.provider,
+      emailError: emailResult.error,
+      verificationToken: emailResult.success ? undefined : verificationToken,
+      message: emailResult.success
+        ? `We've sent a verification email to your registered email (${normalizedEmail}). Please check your inbox and click the verification link to activate your account.`
+        : (emailResult.error
+            ? `Account created! Verification email could not be sent (${emailResult.error}). Please check your SMTP settings in Settings panel.`
+            : `We've sent a verification email to your registered email. Please verify your email to activate your account.`),
     });
   } catch (err: any) {
     console.error('Registration error:', err);
@@ -380,7 +517,7 @@ apiRouter.post('/users/sync', async (req: Request, res: Response) => {
       if (normEmail === 'contributor@nexora.work' || u.id === 'usr-demo-01') {
         continue;
       }
-      await db.createUser({
+      await db.upsertUser({
         ...u,
         id: u.id || `usr-${Date.now().toString().slice(-5)}`,
         email: normEmail,
@@ -390,7 +527,45 @@ apiRouter.post('/users/sync', async (req: Request, res: Response) => {
 
     const allUsers = await db.getUsers();
     const safeUsers = allUsers.map(({ password: _, ...u }) => u);
-    res.json({ success: true, users: safeUsers });
+    res.json({ success: true, users: safeUsers, count: safeUsers.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// =================== EMAIL DELIVERY & SMTP ADMINISTRATION ===================
+
+// GET /api/admin/email-config - Get current email provider and status
+apiRouter.get('/admin/email-config', async (_req: Request, res: Response) => {
+  try {
+    const config = getSafeEmailConfig();
+    res.json({ success: true, config });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/admin/email-config - Save email credentials (Gmail App Password, Brevo, Resend, or SMTP)
+apiRouter.post('/admin/email-config', async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    saveStoredEmailConfig(body);
+    const updated = getSafeEmailConfig();
+    res.json({ success: true, message: 'Email configuration saved successfully.', config: updated });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/admin/email-test - Dispatch a real test email to check connectivity & delivery
+apiRouter.post('/admin/email-test', async (req: Request, res: Response) => {
+  try {
+    const { targetEmail } = req.body || {};
+    if (!targetEmail) {
+      return res.status(400).json({ success: false, message: 'Target email is required.' });
+    }
+    const result = await testEmailConnection(String(targetEmail).trim());
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -550,7 +725,7 @@ apiRouter.post('/applications', async (req: Request, res: Response) => {
     const newApp: StoredApplication = {
       ...appData,
       id: appData.id || `app-${Date.now().toString().slice(-5)}`,
-      status: appData.status || 'Applied',
+      status: 'Applied', // Strictly 'Applied' on initial submission; cannot be pre-approved
       appliedDate: appData.appliedDate || new Date().toISOString().split('T')[0],
     };
 
@@ -573,8 +748,9 @@ apiRouter.post('/applications', async (req: Request, res: Response) => {
 const handleUpdateApplication = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, notes, reviewedDate } = req.body;
+    const { status, notes, reviewedDate, ...rest } = req.body;
     const updated = await db.updateApplication(id, {
+      ...rest,
       status,
       notes,
       reviewedDate: reviewedDate || new Date().toISOString().split('T')[0],
@@ -624,7 +800,7 @@ apiRouter.post('/applications/sync', async (req: Request, res: Response) => {
     if (Array.isArray(incomingApps)) {
       for (const app of incomingApps) {
         if (!app || !app.projectId || (!app.userId && !app.userEmail)) continue;
-        await db.createApplication({
+        await db.upsertApplication({
           ...app,
           id: app.id || `app-${Date.now().toString().slice(-5)}`,
           status: app.status || 'Applied',

@@ -20,10 +20,14 @@ export interface StoredUser {
   resumeText?: string;
   role: 'contributor' | 'admin';
   isEmailVerified: boolean;
+  emailVerified?: boolean;
   profileStatus: 'Complete' | 'Incomplete';
   avatar: string;
   status: 'active' | 'suspended';
   createdAt: string;
+  verificationToken?: string;
+  verificationTokenExpiresAt?: number;
+  requiresEmailVerification?: boolean;
 }
 
 export interface StoredProject {
@@ -810,6 +814,7 @@ class DatabaseService {
       role: userData.role || 'contributor',
       status: userData.status || 'active',
       isEmailVerified: userData.isEmailVerified ?? false,
+      emailVerified: userData.emailVerified ?? userData.isEmailVerified ?? false,
       profileStatus: userData.profileStatus || 'Complete',
       createdAt: userData.createdAt || new Date().toISOString().split('T')[0],
       languages: userData.languages || ['English'],
@@ -866,6 +871,57 @@ class DatabaseService {
     }
     this.saveAll();
     return newUser;
+  }
+
+  public async upsertUser(userData: Partial<StoredUser> & { email: string }): Promise<StoredUser> {
+    const norm = String(userData.email).trim().toLowerCase();
+    const existing = await this.getUserByEmail(norm);
+
+    if (existing) {
+      // Update existing user attributes without overwriting password unless explicitly provided
+      const updated: StoredUser = {
+        ...existing,
+        ...userData,
+        email: norm,
+        id: existing.id || userData.id || `usr-${Date.now().toString().slice(-5)}`,
+        password: userData.password ? (userData.password.includes(':') ? userData.password : hashPassword(userData.password)) : existing.password,
+        role: existing.role === 'admin' || userData.role === 'admin' ? (norm === CANONICAL_ADMIN_EMAIL.toLowerCase() ? 'admin' : 'contributor') : (userData.role || existing.role || 'contributor'),
+        isEmailVerified: userData.isEmailVerified !== undefined ? userData.isEmailVerified : existing.isEmailVerified,
+        status: userData.status || existing.status || 'active',
+      };
+      const idx = this.usersCache.findIndex((u) => u.id === updated.id || u.email.toLowerCase() === norm);
+      if (idx >= 0) {
+        this.usersCache[idx] = updated;
+      } else {
+        this.usersCache.unshift(updated);
+      }
+      this.saveAll();
+      return updated;
+    }
+
+    // Otherwise create brand new user
+    return this.createUser({
+      id: userData.id || `usr-${Date.now().toString().slice(-5)}`,
+      firstName: userData.firstName || 'Contributor',
+      lastName: userData.lastName || '',
+      email: norm,
+      password: userData.password || 'Password123@',
+      phone: userData.phone || '',
+      country: userData.country || 'Global',
+      languages: userData.languages || ['English'],
+      languageProficiency: userData.languageProficiency || { English: 'Fluent' },
+      skills: userData.skills || ['Translation & Localization'],
+      experience: userData.experience || 'Independent Contributor',
+      cvLink: userData.cvLink,
+      resumeUrl: userData.resumeUrl,
+      resumeText: userData.resumeText,
+      role: userData.role || 'contributor',
+      isEmailVerified: userData.isEmailVerified ?? false,
+      profileStatus: userData.profileStatus || 'Incomplete',
+      avatar: userData.avatar || (userData.firstName ? userData.firstName[0].toUpperCase() : 'U'),
+      status: userData.status || 'active',
+      createdAt: userData.createdAt || new Date().toISOString().split('T')[0],
+    });
   }
 
   public async updateUser(id: string, updates: Partial<StoredUser>): Promise<StoredUser | undefined> {
@@ -933,6 +989,70 @@ class DatabaseService {
     this.usersCache = this.usersCache.filter((u) => u.id !== id);
     this.saveAll();
     return this.usersCache.length < initialLen;
+  }
+
+  public async getUserByVerificationToken(token: string): Promise<StoredUser | undefined> {
+    if (!token) return undefined;
+    const clean = token.trim();
+    return this.usersCache.find((u) => u.verificationToken === clean);
+  }
+
+  public async createVerificationToken(email: string): Promise<{ token: string; expiresAt: number } | null> {
+    const norm = email.trim().toLowerCase();
+    const user = this.usersCache.find((u) => u.email.toLowerCase() === norm);
+    if (!user) return null;
+
+    const token = crypto.randomBytes(24).toString('hex');
+    const expiresAt = Date.now() + 5 * 60 * 1000; // Exact 5-minute expiry
+    user.verificationToken = token;
+    user.verificationTokenExpiresAt = expiresAt;
+    user.requiresEmailVerification = true;
+    user.isEmailVerified = false;
+    this.saveAll();
+    return { token, expiresAt };
+  }
+
+  public async verifyEmailByToken(token: string): Promise<{
+    success: boolean;
+    code?: string;
+    message: string;
+    user?: StoredUser;
+    email?: string;
+  }> {
+    if (!token) {
+      return { success: false, code: 'INVALID_TOKEN', message: 'Verification token is required.' };
+    }
+    const clean = token.trim();
+    const user = this.usersCache.find((u) => u.verificationToken === clean);
+    if (!user) {
+      return { success: false, code: 'INVALID_TOKEN', message: 'Invalid or unrecognized verification token.' };
+    }
+
+    // Check exact 5-minute expiry
+    if (user.verificationTokenExpiresAt && Date.now() > user.verificationTokenExpiresAt) {
+      return {
+        success: false,
+        code: 'TOKEN_EXPIRED',
+        email: user.email,
+        message: 'Verification Link Expired',
+      };
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerified = true;
+    user.profileStatus = 'Complete';
+    user.verificationToken = undefined;
+    user.verificationTokenExpiresAt = undefined;
+    user.requiresEmailVerification = false;
+    this.saveAll();
+
+    const { password: _, ...safeUser } = user;
+    return {
+      success: true,
+      user: safeUser as StoredUser,
+      email: user.email,
+      message: 'Your email has been successfully verified!',
+    };
   }
 
   // =================== PROJECTS API ===================
@@ -1071,12 +1191,77 @@ class DatabaseService {
     return newApp;
   }
 
+  public async upsertApplication(appData: StoredApplication): Promise<StoredApplication> {
+    // Check if exists by ID or (userId/userEmail + projectId)
+    const existingIdx = this.applicationsCache.findIndex(
+      (a) =>
+        a.id === appData.id ||
+        (a.projectId === appData.projectId &&
+          ((a.userId && a.userId === appData.userId) ||
+            (a.userEmail && appData.userEmail && a.userEmail.toLowerCase() === appData.userEmail.toLowerCase())))
+    );
+
+    if (existingIdx >= 0) {
+      const existing = this.applicationsCache[existingIdx];
+      const updated: StoredApplication = {
+        ...existing,
+        ...appData,
+        id: existing.id || appData.id,
+        // Keep status if existing was reviewed by admin, otherwise use incoming
+        status: appData.status || existing.status || 'Applied',
+        notes: appData.notes !== undefined ? appData.notes : existing.notes,
+        reviewedDate: appData.reviewedDate || existing.reviewedDate,
+      };
+      this.applicationsCache[existingIdx] = updated;
+      this.recalculateProjectCapacities();
+      this.saveAll();
+      return updated;
+    }
+
+    const newApp: StoredApplication = {
+      ...appData,
+      id: appData.id || `app-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      status: appData.status || 'Applied',
+      appliedDate: appData.appliedDate || new Date().toISOString().split('T')[0],
+      projectName: appData.projectName || CANONICAL_ARABIC_PROJECT.name,
+      projectCategory: appData.projectCategory || CANONICAL_ARABIC_PROJECT.category,
+    };
+    this.applicationsCache.unshift(newApp);
+    this.recalculateProjectCapacities();
+    this.saveAll();
+    return newApp;
+  }
+
   public async updateApplication(
     id: string,
     updates: Partial<StoredApplication>
   ): Promise<StoredApplication | undefined> {
-    const app = await this.getApplicationById(id);
-    if (!app) return undefined;
+    let app = await this.getApplicationById(id);
+    if (!app && updates.userEmail && updates.projectId) {
+      app = this.applicationsCache.find(
+        (a) => a.projectId === updates.projectId && a.userEmail.toLowerCase() === updates.userEmail!.toLowerCase()
+      );
+    }
+    if (!app) {
+      // If updating an application that exists in Firestore but hadn't synced yet, insert it
+      const fallbackApp: StoredApplication = {
+        id,
+        projectId: updates.projectId || 'proj-arabic-en-001',
+        projectName: updates.projectName || CANONICAL_ARABIC_PROJECT.name,
+        projectCategory: updates.projectCategory || CANONICAL_ARABIC_PROJECT.category,
+        userId: updates.userId || `usr-${Date.now().toString().slice(-5)}`,
+        userName: updates.userName || 'Contributor',
+        userEmail: updates.userEmail || 'contributor@nexora.work',
+        status: updates.status || 'Applied',
+        appliedDate: updates.appliedDate || new Date().toISOString().split('T')[0],
+        reviewedDate: updates.status ? new Date().toISOString().split('T')[0] : undefined,
+        notes: updates.notes,
+      };
+      this.applicationsCache.unshift(fallbackApp);
+      this.recalculateProjectCapacities();
+      this.saveAll();
+      return fallbackApp;
+    }
 
     const updatedApp: StoredApplication = {
       ...app,

@@ -26,6 +26,7 @@ import {
   Check,
   Phone,
   FileText,
+  Clock,
 } from 'lucide-react';
 
 export const AdminUsersView: React.FC = () => {
@@ -44,6 +45,8 @@ export const AdminUsersView: React.FC = () => {
   } = useApp();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
+  const [verificationFilter, setVerificationFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'active' | 'suspended'>('ALL');
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [purgeSuccess, setPurgeSuccess] = useState(false);
@@ -51,6 +54,7 @@ export const AdminUsersView: React.FC = () => {
 
   const totalUsers = users.length;
   const verifiedUsers = users.filter((u) => u.isEmailVerified).length;
+  const pendingVerificationCount = users.filter((u) => !u.isEmailVerified).length;
   const activeUsers = users.filter((u) => u.status === 'active').length;
   const contributorCount = users.filter((u) => u.role === 'contributor').length;
 
@@ -62,7 +66,12 @@ export const AdminUsersView: React.FC = () => {
       u.country.toLowerCase().includes(search.toLowerCase()) ||
       u.id.toLowerCase().includes(search.toLowerCase());
     const matchRole = roleFilter === 'ALL' || u.role === roleFilter;
-    return matchSearch && matchRole;
+    const matchVerification =
+      verificationFilter === 'ALL' ||
+      (verificationFilter === 'PENDING' && !u.isEmailVerified) ||
+      (verificationFilter === 'VERIFIED' && !!u.isEmailVerified);
+    const matchStatus = statusFilter === 'ALL' || u.status === statusFilter;
+    return matchSearch && matchRole && matchVerification && matchStatus;
   });
 
   const hasTempUsers = users.some(
@@ -170,23 +179,93 @@ export const AdminUsersView: React.FC = () => {
       )}
 
       {/* Summary KPI Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Total Registered</span>
-          <div className="text-xl font-extrabold text-slate-900 mt-0.5">{totalUsers}</div>
-        </div>
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-[10px] uppercase font-bold text-purple-600">Contributors</span>
-          <div className="text-xl font-extrabold text-purple-700 mt-0.5">{contributorCount}</div>
-        </div>
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-[10px] uppercase font-bold text-emerald-600">Active Accounts</span>
-          <div className="text-xl font-extrabold text-emerald-600 mt-0.5">{activeUsers}</div>
-        </div>
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-[10px] uppercase font-bold text-blue-600">Email Verified</span>
-          <div className="text-xl font-extrabold text-blue-600 mt-0.5">{verifiedUsers}</div>
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setRoleFilter('ALL');
+            setVerificationFilter('ALL');
+            setStatusFilter('ALL');
+          }}
+          className={`p-3 rounded-xl border text-left transition-all ${
+            roleFilter === 'ALL' && verificationFilter === 'ALL' && statusFilter === 'ALL'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+              : 'bg-white hover:bg-slate-50 border-slate-200 shadow-2xs'
+          }`}
+        >
+          <span className={`text-[10px] uppercase font-bold ${roleFilter === 'ALL' && verificationFilter === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`}>
+            Total Registered
+          </span>
+          <div className="text-xl font-extrabold mt-0.5">{totalUsers}</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setVerificationFilter(verificationFilter === 'PENDING' ? 'ALL' : 'PENDING')}
+          className={`p-3 rounded-xl border text-left transition-all ${
+            verificationFilter === 'PENDING'
+              ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+              : 'bg-white hover:bg-amber-50/50 border-slate-200 shadow-2xs'
+          }`}
+        >
+          <span className={`text-[10px] uppercase font-bold flex items-center gap-1 ${verificationFilter === 'PENDING' ? 'text-amber-100' : 'text-amber-600'}`}>
+            <Clock className="w-3 h-3" /> Pending Verification
+          </span>
+          <div className={`text-xl font-extrabold mt-0.5 ${verificationFilter === 'PENDING' ? 'text-white' : 'text-amber-700'}`}>
+            {pendingVerificationCount}
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setVerificationFilter(verificationFilter === 'VERIFIED' ? 'ALL' : 'VERIFIED')}
+          className={`p-3 rounded-xl border text-left transition-all ${
+            verificationFilter === 'VERIFIED'
+              ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+              : 'bg-white hover:bg-blue-50/50 border-slate-200 shadow-2xs'
+          }`}
+        >
+          <span className={`text-[10px] uppercase font-bold ${verificationFilter === 'VERIFIED' ? 'text-blue-100' : 'text-blue-600'}`}>
+            Email Verified
+          </span>
+          <div className={`text-xl font-extrabold mt-0.5 ${verificationFilter === 'VERIFIED' ? 'text-white' : 'text-blue-600'}`}>
+            {verifiedUsers}
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setRoleFilter(roleFilter === 'contributor' ? 'ALL' : 'contributor')}
+          className={`p-3 rounded-xl border text-left transition-all ${
+            roleFilter === 'contributor'
+              ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+              : 'bg-white hover:bg-purple-50/50 border-slate-200 shadow-2xs'
+          }`}
+        >
+          <span className={`text-[10px] uppercase font-bold ${roleFilter === 'contributor' ? 'text-purple-100' : 'text-purple-600'}`}>
+            Contributors
+          </span>
+          <div className={`text-xl font-extrabold mt-0.5 ${roleFilter === 'contributor' ? 'text-white' : 'text-purple-700'}`}>
+            {contributorCount}
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'active' ? 'ALL' : 'active')}
+          className={`p-3 rounded-xl border text-left transition-all ${
+            statusFilter === 'active'
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+              : 'bg-white hover:bg-emerald-50/50 border-slate-200 shadow-2xs'
+          }`}
+        >
+          <span className={`text-[10px] uppercase font-bold ${statusFilter === 'active' ? 'text-emerald-100' : 'text-emerald-600'}`}>
+            Active Accounts
+          </span>
+          <div className={`text-xl font-extrabold mt-0.5 ${statusFilter === 'active' ? 'text-white' : 'text-emerald-600'}`}>
+            {activeUsers}
+          </div>
+        </button>
       </div>
 
       {purgeSuccess && (
@@ -197,8 +276,8 @@ export const AdminUsersView: React.FC = () => {
       )}
 
       {/* Filter Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="relative">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className="relative sm:col-span-2">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
@@ -211,9 +290,21 @@ export const AdminUsersView: React.FC = () => {
 
         <div>
           <select
+            value={verificationFilter}
+            onChange={(e) => setVerificationFilter(e.target.value as any)}
+            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 font-medium text-slate-700"
+          >
+            <option value="ALL">All Verification Statuses ({totalUsers})</option>
+            <option value="PENDING">⏳ Pending Verification ({pendingVerificationCount})</option>
+            <option value="VERIFIED">✅ Email Verified ({verifiedUsers})</option>
+          </select>
+        </div>
+
+        <div>
+          <select
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500"
+            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 font-medium text-slate-700"
           >
             <option value="ALL">All Roles ({totalUsers})</option>
             <option value="contributor">Contributor Only ({contributorCount})</option>
@@ -319,16 +410,16 @@ export const AdminUsersView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => toggleEmailVerification(u.id)}
-                        className="inline-flex items-center gap-1 text-[11px] transition-transform active:scale-95"
+                        className="inline-flex items-center gap-1.5 text-[11px] transition-transform active:scale-95"
                         title="Click to toggle email verification status"
                       >
                         {u.isEmailVerified ? (
-                          <span className="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200 font-medium flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Verified
+                          <span className="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Verified
                           </span>
                         ) : (
-                          <span className="text-amber-700 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 font-medium flex items-center gap-1">
-                            <XCircle className="w-3 h-3 text-amber-600" /> Unverified
+                          <span className="text-amber-800 bg-amber-50 hover:bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300 font-semibold flex items-center gap-1 animate-pulse">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" /> Pending Verification
                           </span>
                         )}
                       </button>
@@ -344,6 +435,19 @@ export const AdminUsersView: React.FC = () => {
                     {/* Actions */}
                     <td className="px-4 py-3.5 text-right whitespace-nowrap">
                       <div className="inline-flex items-center gap-1.5">
+                        {/* Quick Verify Button for Pending Users */}
+                        {!u.isEmailVerified && (
+                          <button
+                            type="button"
+                            onClick={() => toggleEmailVerification(u.id)}
+                            className="px-2 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded transition-colors flex items-center gap-1 shadow-2xs"
+                            title="Approve and verify this user immediately"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            Verify User
+                          </button>
+                        )}
+
                         {/* View Full Info */}
                         <button
                           type="button"

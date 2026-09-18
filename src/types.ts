@@ -105,10 +105,14 @@ export interface UserProfile {
   resumeFile?: UploadedFileMeta;
   role: 'contributor' | 'admin';
   isEmailVerified: boolean;
+  emailVerified?: boolean;
   profileStatus: 'Complete' | 'Incomplete';
   avatar?: string;
   status?: 'active' | 'suspended';
   createdAt?: string;
+  verificationToken?: string;
+  verificationTokenExpiresAt?: number;
+  requiresEmailVerification?: boolean;
 }
 
 export interface ProjectApplication {

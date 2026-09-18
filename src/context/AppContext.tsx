@@ -30,6 +30,7 @@ import {
   subscribeToApplicationsFirestore,
   saveProjectToFirestore,
   fetchProjectsFromFirestore,
+  isQuotaExhausted,
 } from '../lib/firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -38,7 +39,7 @@ interface AppContextType {
   firebaseProjectId: string;
   currentUser: UserProfile | null;
   setCurrentUser: (user: UserProfile | null) => void;
-  login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; message?: string; code?: string; userEmail?: string }>;
   register: (data: {
     firstName: string;
     lastName: string;
@@ -48,7 +49,31 @@ interface AppContextType {
     primaryLanguage?: string;
     phone?: string;
     skills?: string[];
-  }) => Promise<{ success: boolean; message: string }>;
+  }) => Promise<{
+    success: boolean;
+    message: string;
+    requiresVerification?: boolean;
+    verificationToken?: string;
+    expiresAt?: number;
+    email?: string;
+    emailSent?: boolean;
+    emailError?: string;
+  }>;
+  resendVerificationEmail: (email: string) => Promise<{
+    success: boolean;
+    message: string;
+    verificationToken?: string;
+    expiresAt?: number;
+    emailSent?: boolean;
+    emailError?: string;
+  }>;
+  verifyEmailByToken: (token: string) => Promise<{
+    success: boolean;
+    code?: string;
+    message: string;
+    email?: string;
+    user?: UserProfile;
+  }>;
   verifyEmail: () => void;
   logout: () => void;
   updateProfile: (profile: Partial<UserProfile>) => void;
@@ -205,6 +230,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ) {
       return null;
     }
+    // Block unverified non-admin users from being loaded into session
+    if (stored && stored.role !== 'admin') {
+      const isVerified = (stored.emailVerified ?? stored.isEmailVerified) === true;
+      if (!isVerified) {
+        return null;
+      }
+    }
     return stored;
   });
 
@@ -310,32 +342,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const refreshLiveServerData = useCallback(async () => {
     try {
       setIsSyncing(true);
-      const [projRes, appRes, userRes, fbUsers, fbApps, fbProjects] = await Promise.all([
+
+      // Phase 1: FAST, sub-50ms fetch from central backend Express server
+      const [projRes, appRes, userRes] = await Promise.all([
         fetch(`${API_BASE}/api/projects`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/applications`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/users`).then((r) => r.json()).catch(() => null),
-        fetchUsersFromFirestore().catch(() => [] as UserProfile[]),
-        fetchApplicationsFromFirestore().catch(() => [] as ProjectApplication[]),
-        fetchProjectsFromFirestore().catch(() => [] as Project[]),
       ]);
 
       setSyncError(null);
-      setFirebaseConnected(true);
+      setFirebaseConnected(!isQuotaExhausted());
 
-      // 1. Projects Sync
-      if (fbProjects && fbProjects.length > 0) {
-        setProjects(fbProjects);
-      } else if (projRes?.success && Array.isArray(projRes.projects) && projRes.projects.length > 0) {
+      const serverUserEmails = new Set<string>();
+      const serverAppIds = new Set<string>();
+
+      // Apply Projects immediately
+      if (projRes?.success && Array.isArray(projRes.projects) && projRes.projects.length > 0) {
         setProjects(projRes.projects);
       }
 
-      // 2. Applications Sync (Merge server, Firestore, and local)
+      // Apply Applications immediately
       const appMap = new Map<string, ProjectApplication>();
       if (appRes?.success && Array.isArray(appRes.applications)) {
-        for (const a of appRes.applications) appMap.set(a.id, a);
-      }
-      if (fbApps && Array.isArray(fbApps)) {
-        for (const a of fbApps) appMap.set(a.id, a);
+        for (const a of appRes.applications) {
+          appMap.set(a.id, a);
+          serverAppIds.add(a.id);
+        }
       }
       setApplications((prev) => {
         for (const a of prev) {
@@ -348,28 +380,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return merged;
       });
 
-      // 3. Users Sync (Merge Firestore, backend API, and local users)
+      // Apply Users immediately
       const userMap = new Map<string, UserProfile>();
-      
-      // Add server users
       if (userRes?.success && Array.isArray(userRes.users)) {
         for (const u of userRes.users) {
           if (u && u.id && u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
             userMap.set(u.id, u);
+            if (u.email) serverUserEmails.add(u.email.toLowerCase());
           }
         }
       }
-
-      // Add authoritative Firebase users
-      if (fbUsers && Array.isArray(fbUsers)) {
-        for (const u of fbUsers) {
-          if (u && u.id && u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
-            userMap.set(u.id, u);
-          }
-        }
-      }
-
-      // Merge with current state (so freshly registered users are never dropped)
       setUsers((prev) => {
         for (const u of prev) {
           if (u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
@@ -384,6 +404,103 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       setLastSyncedAt(new Date());
+      setIsSyncing(false);
+
+      // Phase 2: Background synchronization (non-blocking)
+      // 2a. Backfill any missing local applications to server
+      const missingApps = Array.from(appMap.values()).filter((a) => !serverAppIds.has(a.id));
+      if (missingApps.length > 0) {
+        fetch(`${API_BASE}/api/applications/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ applications: missingApps }),
+        }).catch(() => {});
+      }
+
+      // 2b. Backfill any missing local users to server
+      const missingUsers = Array.from(userMap.values()).filter(
+        (u) => u.email && !serverUserEmails.has(u.email.toLowerCase())
+      );
+      if (missingUsers.length > 0) {
+        fetch(`${API_BASE}/api/users/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: missingUsers }),
+        }).catch(() => {});
+      }
+
+      // 2c. If Firestore is active and not quota-exhausted, fetch and reconcile in background
+      if (!isQuotaExhausted()) {
+        (async () => {
+          try {
+            const [fbUsers, fbApps, fbProjects] = await Promise.all([
+              fetchUsersFromFirestore().catch(() => [] as UserProfile[]),
+              fetchApplicationsFromFirestore().catch(() => [] as ProjectApplication[]),
+              fetchProjectsFromFirestore().catch(() => [] as Project[]),
+            ]);
+
+            if (fbProjects && fbProjects.length > 0) {
+              setProjects(fbProjects);
+            }
+
+            if (fbApps && fbApps.length > 0) {
+              const incomingMissingApps: ProjectApplication[] = [];
+              setApplications((prev) => {
+                const map = new Map<string, ProjectApplication>();
+                for (const a of prev) map.set(a.id, a);
+                for (const a of fbApps) {
+                  if (!map.has(a.id)) {
+                    incomingMissingApps.push(a);
+                  }
+                  map.set(a.id, a);
+                }
+                const merged = Array.from(map.values());
+                saveStorage('applications', merged);
+                return merged;
+              });
+              if (incomingMissingApps.length > 0) {
+                fetch(`${API_BASE}/api/applications/sync`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ applications: incomingMissingApps }),
+                }).catch(() => {});
+              }
+            }
+
+            if (fbUsers && fbUsers.length > 0) {
+              const incomingMissingUsers: UserProfile[] = [];
+              setUsers((prev) => {
+                const map = new Map<string, UserProfile>();
+                for (const u of prev) {
+                  if (u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
+                    map.set(u.id, u);
+                  }
+                }
+                for (const u of fbUsers) {
+                  if (u.id !== 'usr-demo-01' && u.email?.toLowerCase() !== 'contributor@nexora.work') {
+                    if (!map.has(u.id)) {
+                      incomingMissingUsers.push(u);
+                    }
+                    map.set(u.id, u);
+                  }
+                }
+                const merged = Array.from(map.values());
+                saveStorage('users', merged);
+                return merged;
+              });
+              if (incomingMissingUsers.length > 0) {
+                fetch(`${API_BASE}/api/users/sync`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ users: incomingMissingUsers }),
+                }).catch(() => {});
+              }
+            }
+          } catch (e) {
+            console.warn('Background Firestore sync notice:', e);
+          }
+        })();
+      }
     } catch (err) {
       console.warn('Sync error:', err);
       setSyncError(null);
@@ -463,11 +580,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [refreshLiveServerData, API_BASE]);
 
   const setCurrentUser = (user: UserProfile | null) => {
+    if (user && user.role !== 'admin') {
+      const isVerified = (user.emailVerified ?? user.isEmailVerified) === true;
+      if (!isVerified) {
+        console.warn('[AUTH] Refusing to set unverified user as currentUser');
+        return;
+      }
+    }
     setCurrentUserState(user);
+    saveStorage('currentUser', user);
   };
 
   // UNIFIED AUTHENTICATION (Section 5: Database authentication, no hardcoded credentials)
-  const login = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
+  const login = async (
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; message?: string; code?: string; userEmail?: string }> => {
     const normEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
     if (!normEmail || !cleanPassword) {
@@ -538,14 +666,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const data = await res.json();
 
         if (res.ok && data.success && data.user) {
+          const isUserVerified = (data.user.emailVerified ?? data.user.isEmailVerified) === true;
+          if (data.user.role !== 'admin' && !isUserVerified) {
+            return {
+              success: false,
+              code: 'EMAIL_NOT_VERIFIED',
+              userEmail: data.user.email || normEmail,
+              message: 'Please verify your email address before continuing.',
+            };
+          }
           saveLocalPassword(normEmail, cleanPassword);
           setCurrentUserState(data.user);
+          saveStorage('currentUser', data.user);
           setUsers((prev) => {
             const exists = prev.some((u) => u.id === data.user.id || u.email.toLowerCase() === normEmail);
             if (!exists) return [...prev, data.user];
             return prev.map((u) => (u.email.toLowerCase() === normEmail ? data.user : u));
           });
           return { success: true };
+        }
+
+        if (data && data.code === 'EMAIL_NOT_VERIFIED') {
+          return {
+            success: false,
+            code: 'EMAIL_NOT_VERIFIED',
+            userEmail: data.email || normEmail,
+            message: data.message || 'Please verify your email address before continuing.',
+          };
         }
 
         // Check if user is cached locally before showing error
@@ -555,7 +702,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (localUser.status === 'suspended') {
             return { success: false, message: 'Your account has been suspended. Please contact platform support.' };
           }
+          const isUserVerified = (localUser.emailVerified ?? localUser.isEmailVerified) === true;
+          if (localUser.role !== 'admin' && !isUserVerified) {
+            return {
+              success: false,
+              code: 'EMAIL_NOT_VERIFIED',
+              userEmail: localUser.email,
+              message: 'Please verify your email address before continuing.',
+            };
+          }
           setCurrentUserState(localUser);
+          saveStorage('currentUser', localUser);
           return { success: true };
         }
 
@@ -571,7 +728,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (localUser.status === 'suspended') {
           return { success: false, message: 'Your account has been suspended. Please contact platform support.' };
         }
+        const isUserVerified = (localUser.emailVerified ?? localUser.isEmailVerified) === true;
+        if (localUser.role !== 'admin' && !isUserVerified) {
+          return {
+            success: false,
+            code: 'EMAIL_NOT_VERIFIED',
+            userEmail: localUser.email,
+            message: 'Please verify your email address before continuing.',
+          };
+        }
         setCurrentUserState(localUser);
+        saveStorage('currentUser', localUser);
         return { success: true };
       }
 
@@ -587,9 +754,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (found.status === 'suspended') {
           return { success: false, message: 'Your account has been suspended. Please contact platform support.' };
         }
+        const isUserVerified = (found.emailVerified ?? found.isEmailVerified) === true;
+        if (found.role !== 'admin' && !isUserVerified) {
+          return {
+            success: false,
+            code: 'EMAIL_NOT_VERIFIED',
+            userEmail: found.email,
+            message: 'Please verify your email address before continuing.',
+          };
+        }
         const storedPass = getLocalPassword(normEmail);
         if (storedPass && (storedPass === password || storedPass === cleanPassword)) {
           setCurrentUserState(found);
+          saveStorage('currentUser', found);
           return { success: true };
         }
       }
@@ -610,7 +787,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     primaryLanguage?: string;
     phone?: string;
     skills?: string[];
-  }): Promise<{ success: boolean; message: string }> => {
+  }): Promise<{
+    success: boolean;
+    message: string;
+    requiresVerification?: boolean;
+    verificationToken?: string;
+    expiresAt?: number;
+    email?: string;
+    emailSent?: boolean;
+    emailError?: string;
+  }> => {
     const normEmail = data.email.trim().toLowerCase();
     const cleanFirstName = data.firstName.trim();
     const cleanLastName = data.lastName.trim();
@@ -620,6 +806,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!cleanFirstName || !cleanLastName || !normEmail || !data.password) {
       return { success: false, message: 'Please fill out all required fields.' };
     }
+
+    const localToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const localExpiresAt = Date.now() + 5 * 60 * 1000;
 
     const buildLocalUser = (id?: string): UserProfile => ({
       id: id || `usr-${Date.now().toString().slice(-5)}`,
@@ -640,6 +829,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       avatar: (cleanFirstName[0] || 'U').toUpperCase() + (cleanLastName[0] || 'C').toUpperCase(),
       status: 'active',
       createdAt: new Date().toISOString().split('T')[0],
+      verificationToken: localToken,
+      verificationTokenExpiresAt: localExpiresAt,
+      requiresEmailVerification: true,
     });
 
     try {
@@ -667,35 +859,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (contentType && contentType.includes('application/json')) {
         const result = await res.json();
 
-        if (res.ok && result.success && result.user) {
+        if (res.ok && result.success) {
           saveLocalPassword(normEmail, data.password);
-          setCurrentUserState(result.user);
+          const vToken = result.verificationToken || localToken;
+          const vExpires = result.expiresAt || localExpiresAt;
+
+          const registeredUser: UserProfile = {
+            ...(result.user || buildLocalUser(result.user?.id)),
+            verificationToken: vToken,
+            verificationTokenExpiresAt: vExpires,
+            requiresEmailVerification: true,
+            isEmailVerified: false,
+            emailVerified: false,
+          };
+
           setUsers((prev) => {
             const exists = prev.some((u) => u.email.toLowerCase() === normEmail);
-            const next = exists ? prev.map((u) => (u.email.toLowerCase() === normEmail ? result.user : u)) : [...prev, result.user];
+            const next = exists
+              ? prev.map((u) => (u.email.toLowerCase() === normEmail ? registeredUser : u))
+              : [...prev, registeredUser];
             saveStorage('users', next);
             return next;
           });
-          // Immediately persist to Firebase Firestore
-          saveUserToFirestore(result.user).catch((e) => console.warn('Firestore user save notice:', e));
+
+          // Persist unverified user state to Firebase Firestore
+          saveUserToFirestore(registeredUser).catch((e) => console.warn('Firestore user save notice:', e));
+
+          // Rule 3: DO NOT automatically log the user into the dashboard after registration.
           return {
             success: true,
-            message: result.message || 'Account registered successfully! Welcome to Nexora Workforce.',
+            requiresVerification: true,
+            email: normEmail,
+            verificationToken: result.verificationToken || vToken,
+            expiresAt: vExpires,
+            emailSent: result.emailSent,
+            emailError: result.emailError,
+            message: result.message || "We've sent a verification email to your registered email. Please verify your email to activate your account.",
           };
         }
 
-        // Specific message from backend (e.g. email reserved for admin)
+        // Specific message from backend (e.g. account already exists, reserved email)
         if (result.message && !res.ok) {
-          if (result.message.toLowerCase().includes('already exists')) {
-            const localPass = getLocalPassword(normEmail);
-            if (localPass && localPass === data.password) {
-              const existing = users.find((u) => u.email.toLowerCase() === normEmail);
-              if (existing) {
-                setCurrentUserState(existing);
-                return { success: true, message: 'Welcome back! Your account has been loaded.' };
-              }
-            }
-          }
           return {
             success: false,
             message: result.message,
@@ -705,53 +909,205 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       throw new Error('Non-JSON response from server');
     } catch (err) {
-      // Seamless registration fallback if server is restarting or network hiccup occurs
       console.warn('Registration network fallback engaged:', err);
 
       const existingUser = users.find((u) => u.email.toLowerCase() === normEmail);
       if (existingUser) {
-        const storedPass = getLocalPassword(normEmail);
-        if (storedPass === data.password) {
-          setCurrentUserState(existingUser);
-          return { success: true, message: 'Welcome back! Your account has been loaded.' };
-        }
         return {
           success: false,
           message: 'An account with this email address already exists. Please log in.',
         };
       }
 
-      const localUser = buildLocalUser();
+      const localUser: UserProfile = {
+        ...buildLocalUser(),
+        isEmailVerified: false,
+        emailVerified: false,
+        requiresEmailVerification: true,
+        verificationToken: localToken,
+        verificationTokenExpiresAt: localExpiresAt,
+      };
       saveLocalPassword(normEmail, data.password);
-      setCurrentUserState(localUser);
       setUsers((prev) => {
         const next = [...prev.filter((u) => u.email.toLowerCase() !== normEmail), localUser];
         saveStorage('users', next);
         return next;
       });
 
-      // Immediately persist to Firebase Firestore
+      // Persist to Firebase Firestore
       saveUserToFirestore(localUser).catch((e) => console.warn('Firestore fallback user save notice:', e));
-
-      // Schedule background sync once server is responsive
-      setTimeout(() => {
-        fetch(`${API_BASE}/api/auth/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            firstName: cleanFirstName,
-            lastName: cleanLastName,
-            email: normEmail,
-            password: data.password,
-            country: cleanCountry,
-            primaryLanguage: cleanLanguage,
-          }),
-        }).catch(() => {});
-      }, 1500);
 
       return {
         success: true,
-        message: 'Account registered successfully! Welcome to Nexora Workforce.',
+        requiresVerification: true,
+        email: normEmail,
+        verificationToken: localToken,
+        expiresAt: localExpiresAt,
+        message: "We've sent a verification email to your registered email. Please verify your email to activate your account.",
+      };
+    }
+  };
+
+  const resendVerificationEmail = async (
+    emailToResend: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    verificationToken?: string;
+    expiresAt?: number;
+    emailSent?: boolean;
+    emailError?: string;
+  }> => {
+    const norm = emailToResend.trim().toLowerCase();
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: norm }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const newExpiry = data.expiresAt || Date.now() + 5 * 60 * 1000;
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.email.toLowerCase() === norm
+              ? {
+                  ...u,
+                  verificationToken: data.verificationToken,
+                  verificationTokenExpiresAt: newExpiry,
+                  requiresEmailVerification: true,
+                  isEmailVerified: false,
+                }
+              : u
+          )
+        );
+        return {
+          success: true,
+          message: data.message || "We've sent a verification email to your registered email. Please verify your email to activate your account.",
+          verificationToken: data.verificationToken,
+          expiresAt: newExpiry,
+          emailSent: data.emailSent,
+          emailError: data.emailError,
+        };
+      }
+      return { success: false, message: data.message || 'Failed to resend verification email.' };
+    } catch (e) {
+      const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      const expiresAt = Date.now() + 5 * 60 * 1000;
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.email.toLowerCase() === norm
+            ? {
+                ...u,
+                verificationToken: token,
+                verificationTokenExpiresAt: expiresAt,
+                requiresEmailVerification: true,
+                isEmailVerified: false,
+              }
+            : u
+        )
+      );
+      return {
+        success: true,
+        message: "We've sent a verification email to your registered email. Please verify your email to activate your account.",
+        verificationToken: token,
+        expiresAt,
+      };
+    }
+  };
+
+  const verifyEmailByToken = async (
+    token: string
+  ): Promise<{
+    success: boolean;
+    code?: string;
+    message: string;
+    email?: string;
+    user?: UserProfile;
+  }> => {
+    const cleanToken = token.trim();
+    if (!cleanToken) {
+      return { success: false, code: 'INVALID_TOKEN', message: 'Verification token is required.' };
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/verify-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: cleanToken }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        const verifiedEmail = data.email || data.user?.email;
+        setUsers((prev) =>
+          prev.map((u) => {
+            if (
+              u.verificationToken === cleanToken ||
+              (verifiedEmail && u.email.toLowerCase() === verifiedEmail.toLowerCase())
+            ) {
+              const updated: UserProfile = {
+                ...u,
+                isEmailVerified: true,
+                emailVerified: true,
+                profileStatus: 'Complete' as const,
+                requiresEmailVerification: false,
+                verificationToken: undefined,
+                verificationTokenExpiresAt: undefined,
+              };
+              saveUserToFirestore(updated).catch((e) => console.warn('Firestore sync notice:', e));
+              return updated;
+            }
+            return u;
+          })
+        );
+
+        return {
+          success: true,
+          message: data.message || 'Your email has been successfully verified!',
+          email: verifiedEmail,
+          user: data.user,
+        };
+      }
+
+      return {
+        success: false,
+        code: data.code || 'VERIFICATION_FAILED',
+        message: data.message || 'Verification link is invalid or has expired.',
+        email: data.email,
+      };
+    } catch (err) {
+      const foundUser = users.find((u) => u.verificationToken === cleanToken);
+      if (!foundUser) {
+        return { success: false, code: 'INVALID_TOKEN', message: 'Invalid or unrecognized verification link.' };
+      }
+      if (foundUser.verificationTokenExpiresAt && Date.now() > foundUser.verificationTokenExpiresAt) {
+        return {
+          success: false,
+          code: 'TOKEN_EXPIRED',
+          email: foundUser.email,
+          message: 'Verification Link Expired',
+        };
+      }
+
+      const updatedUser: UserProfile = {
+        ...foundUser,
+        isEmailVerified: true,
+        emailVerified: true,
+        profileStatus: 'Complete',
+        requiresEmailVerification: false,
+        verificationToken: undefined,
+        verificationTokenExpiresAt: undefined,
+      };
+
+      setUsers((prev) => prev.map((u) => (u.id === foundUser.id ? updatedUser : u)));
+      saveUserToFirestore(updatedUser).catch(() => {});
+
+      return {
+        success: true,
+        message: 'Your email has been successfully verified!',
+        email: foundUser.email,
+        user: updatedUser,
       };
     }
   };
@@ -1069,21 +1425,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await fetch(`${API_BASE}/api/applications/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, notes }),
+        body: JSON.stringify({
+          status,
+          notes,
+          reviewedDate: updatedApp.reviewedDate,
+          userId: updatedApp.userId,
+          userEmail: updatedApp.userEmail,
+          userName: updatedApp.userName,
+          projectId: updatedApp.projectId,
+          projectName: updatedApp.projectName,
+        }),
       });
       const resData = await res.json();
-      if (resData.success && Array.isArray(resData.applications)) {
-        setApplications(resData.applications);
+      if (resData.success) {
+        if (resData.application) {
+          setApplications((prev) =>
+            prev.map((app) => (app.id === id ? resData.application : app))
+          );
+        }
+        if (Array.isArray(resData.projects)) {
+          setProjects(resData.projects);
+        }
       }
-      if (resData.success && Array.isArray(resData.projects)) {
-        setProjects(resData.projects);
-      }
-      fetch(`${API_BASE}/api/projects`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.success && Array.isArray(d.projects)) setProjects(d.projects);
-        })
-        .catch(() => {});
     } catch (err) {
       console.warn('Failed to update application status on server:', err);
     }
@@ -1152,7 +1515,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const data = await res.json();
       if (data.success && Array.isArray(data.applications)) {
-        setApplications(data.applications);
+        setApplications((prev) => {
+          const map = new Map<string, ProjectApplication>();
+          for (const a of prev) map.set(a.id, a);
+          for (const a of data.applications) map.set(a.id, a);
+          const merged = Array.from(map.values());
+          saveStorage('applications', merged);
+          return merged;
+        });
       }
       if (data.success && Array.isArray(data.projects)) {
         setProjects(data.projects);
@@ -1476,6 +1846,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentUser,
         login,
         register,
+        resendVerificationEmail,
+        verifyEmailByToken,
         verifyEmail,
         logout,
         updateProfile,

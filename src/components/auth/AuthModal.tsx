@@ -8,14 +8,23 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode?: 'login' | 'register';
+  onOpenVerification?: (data: {
+    email: string;
+    token?: string;
+    expiresAt?: number;
+    initialState: 'created' | 'unverified_notice';
+    emailSent?: boolean;
+    emailError?: string;
+  }) => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   initialMode = 'login',
+  onOpenVerification,
 }) => {
-  const { login, register } = useApp();
+  const { login, register, resendVerificationEmail } = useApp();
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
 
   // Form states
@@ -29,12 +38,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setPendingVerificationEmail(null);
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
     if (!cleanEmail || !cleanPassword) {
@@ -49,14 +60,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (res.success) {
       onClose();
     } else {
-      setError(res.message || 'Invalid email or password.');
+      if (res.code === 'EMAIL_NOT_VERIFIED') {
+        const unverified = res.userEmail || cleanEmail;
+        setPendingVerificationEmail(unverified);
+        setError('Please verify your email address before continuing.');
+      } else {
+        setPendingVerificationEmail(null);
+        setError(res.message || 'Invalid email or password.');
+      }
     }
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!firstName || !lastName || !email || !password) {
+    setPendingVerificationEmail(null);
+    const cleanEmail = email.trim().toLowerCase();
+    if (!firstName || !lastName || !cleanEmail || !password) {
       setError('Please fill out all required fields.');
       return;
     }
@@ -65,7 +85,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const res = await register({
       firstName,
       lastName,
-      email,
+      email: cleanEmail,
       password,
       country,
       primaryLanguage,
@@ -73,10 +93,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(false);
 
     if (res.success) {
-      setRegSuccessMessage(res.message);
-      setTimeout(() => {
-        onClose();
-      }, 1200);
+      onClose();
+      if (onOpenVerification) {
+        onOpenVerification({
+          email: res.email || cleanEmail,
+          token: res.verificationToken,
+          expiresAt: res.expiresAt,
+          initialState: 'created',
+          emailSent: res.emailSent,
+          emailError: res.emailError || (res.emailSent === false ? res.message : undefined),
+        });
+      }
+      return;
     } else {
       setError(res.message || 'Registration failed.');
     }
@@ -119,8 +147,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div className="p-6 bg-white overflow-y-auto">
             {error && (
               <div className="mb-4 p-3 text-xs font-medium text-rose-800 bg-rose-50 border border-rose-200 rounded-lg flex items-start justify-between gap-2">
-                <div>
+                <div className="w-full">
                   <p>{error}</p>
+                  {pendingVerificationEmail && (
+                    <div className="mt-2.5 pt-2 border-t border-rose-200/80 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold text-rose-700">Account Activation Pending</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          if (onOpenVerification) {
+                            onOpenVerification({
+                              email: pendingVerificationEmail,
+                              initialState: 'unverified_notice',
+                            });
+                          }
+                        }}
+                        className="text-xs font-bold text-indigo-700 hover:text-indigo-900 underline flex items-center gap-1"
+                      >
+                        Resend Verification Email →
+                      </button>
+                    </div>
+                  )}
                   {error.toLowerCase().includes('already exists') && (
                     <button
                       type="button"
@@ -136,8 +184,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setError(null)}
-                  className="text-rose-500 hover:text-rose-700 p-0.5"
+                  onClick={() => {
+                    setError(null);
+                    setPendingVerificationEmail(null);
+                  }}
+                  className="text-rose-500 hover:text-rose-700 p-0.5 shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
