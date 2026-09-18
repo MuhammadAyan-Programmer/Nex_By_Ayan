@@ -78,6 +78,11 @@ export const MaintenancePage: React.FC<MaintenancePageProps> = ({ onAdminLoginRe
     try {
       const result = await login(adminEmail.trim(), adminPassword);
       if (result.success) {
+        if (result.user?.role !== 'admin') {
+          logout();
+          setLoginError('Access restricted: Contributor accounts are paused while maintenance is in effect. Only System Administrators may access the platform.');
+          return;
+        }
         setIsAdminModalOpen(false);
       } else {
         setLoginError(result.message || 'Invalid administrator credentials.');

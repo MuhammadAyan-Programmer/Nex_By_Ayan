@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Project } from './types';
+import { Eye, X } from 'lucide-react';
 import { PublicWebsite } from './components/public/PublicWebsite';
 import { AuthModal } from './components/auth/AuthModal';
 import { ProjectDetailsModal } from './components/dashboard/ProjectDetailsModal';
@@ -53,6 +54,9 @@ const AppContent: React.FC = () => {
   }>({
     isOpen: false,
   });
+
+  // Admin preview of public/contributor maintenance page
+  const [isAdminPreviewingMaintenance, setIsAdminPreviewingMaintenance] = useState(false);
 
   // Check URL query param or hash for email verification links (?verifyToken=... or #verify=...)
   React.useEffect(() => {
@@ -245,6 +249,14 @@ const AppContent: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsAdminPreviewingMaintenance(true)}
+                    className="px-3.5 py-1.5 bg-white/20 hover:bg-white/30 text-white font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Preview User Screen
+                  </button>
                   {adminTab !== 'maintenance' && (
                     <button
                       type="button"
@@ -314,6 +326,31 @@ const AppContent: React.FC = () => {
           isOpen={isAdminCreateOpen}
           onClose={() => setIsAdminCreateOpen(false)}
         />
+
+        {/* Admin Maintenance Screen Preview Overlay */}
+        {isAdminPreviewingMaintenance && (
+          <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
+            <div className="bg-slate-900 border-b border-slate-800 px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                  Admin Live Preview: What visitors & contributors see
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdminPreviewingMaintenance(false)}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+                Exit Preview
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <MaintenancePage />
+            </div>
+          </div>
+        )}
       </div>
     );
   }

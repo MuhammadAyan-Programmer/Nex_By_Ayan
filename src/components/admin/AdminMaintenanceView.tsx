@@ -39,40 +39,46 @@ export const AdminMaintenanceView: React.FC = () => {
   );
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
+  // Convert any ISO or date string to local datetime-local format YYYY-MM-DDTHH:mm
+  const toLocalInputFormat = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  // Convert input datetime-local string to full ISO 8601 string with UTC timezone offset
+  const toIsoOrEmpty = (localStr: string): string => {
+    if (!localStr) return '';
+    const d = new Date(localStr);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString();
+  };
+
   // Sync form whenever external config changes
   useEffect(() => {
     setEnabled(config.enabled);
-    setStartDateTime(config.startDateTime || '');
-    setEndDateTime(config.endDateTime || '');
+    setStartDateTime(config.startDateTime ? toLocalInputFormat(config.startDateTime) : '');
+    setEndDateTime(config.endDateTime ? toLocalInputFormat(config.endDateTime) : '');
     if (config.title) setTitle(config.title);
     if (config.message) setMessage(config.message);
   }, [config]);
 
-  // Convert Date to datetime-local input string YYYY-MM-DDTHH:mm in local time
-  const toLocalISO = (d: Date): string => {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const year = d.getFullYear();
-    const month = pad(d.getMonth() + 1);
-    const day = pad(d.getDate());
-    const hours = pad(d.getHours());
-    const minutes = pad(d.getMinutes());
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-  };
-
   // Helper presets
   const handleSetStartNow = () => {
-    setStartDateTime(toLocalISO(new Date()));
+    setStartDateTime(toLocalInputFormat(new Date().toISOString()));
   };
 
   const handleSetStartOffset = (minutes: number) => {
     const d = new Date(Date.now() + minutes * 60 * 1000);
-    setStartDateTime(toLocalISO(d));
+    setStartDateTime(toLocalInputFormat(d.toISOString()));
   };
 
   const handleSetEndOffset = (hours: number) => {
     const base = startDateTime ? new Date(startDateTime).getTime() : Date.now();
     const d = new Date(base + hours * 3600 * 1000);
-    setEndDateTime(toLocalISO(d));
+    setEndDateTime(toLocalInputFormat(d.toISOString()));
   };
 
   const handleSave = async (e?: React.FormEvent) => {
@@ -80,10 +86,13 @@ export const AdminMaintenanceView: React.FC = () => {
     setIsSaving(true);
     setSaveFeedback(null);
 
+    const sIso = startDateTime ? toIsoOrEmpty(startDateTime) : '';
+    const eIso = endDateTime ? toIsoOrEmpty(endDateTime) : '';
+
     // Validate dates if both provided
-    if (startDateTime && endDateTime) {
-      const s = new Date(startDateTime).getTime();
-      const end = new Date(endDateTime).getTime();
+    if (sIso && eIso) {
+      const s = new Date(sIso).getTime();
+      const end = new Date(eIso).getTime();
       if (end <= s) {
         setSaveFeedback({
           type: 'error',
@@ -94,13 +103,23 @@ export const AdminMaintenanceView: React.FC = () => {
       }
     }
 
+    // If enabled is checked, check if end time is already in the past
+    if (enabled && eIso && new Date(eIso).getTime() <= Date.now()) {
+      setSaveFeedback({
+        type: 'error',
+        text: 'The scheduled end time is in the past. Please select a future end time or clear the end time field for open-ended maintenance.',
+      });
+      setIsSaving(false);
+      return;
+    }
+
     try {
       const result = await saveMaintenance({
         enabled,
-        startDateTime,
-        endDateTime,
-        title: title.trim(),
-        message: message.trim(),
+        startDateTime: sIso,
+        endDateTime: eIso,
+        title: title.trim() || 'System Under Scheduled Maintenance',
+        message: message.trim() || 'Nexora Workforce is temporarily offline for scheduled system upgrades and infrastructure optimization.',
       });
       setSaveFeedback({
         type: 'success',
@@ -121,30 +140,47 @@ export const AdminMaintenanceView: React.FC = () => {
     setIsSaving(true);
     setSaveFeedback(null);
     try {
-      const next = !enabled;
-      setEnabled(next);
-      // If turning ON and no start time, set start time to now
-      let nextStart = startDateTime;
-      let nextEnd = endDateTime;
-      if (next && !startDateTime) {
-        nextStart = toLocalISO(new Date());
-        setStartDateTime(nextStart);
+      // Toggle based on live active status so it always activates immediately when turned on
+      const next = !isActive;
+      let nextStartIso = '';
+      let nextEndIso = '';
+
+      if (next) {
+        // Turning ON immediately
+        const now = Date.now();
+        nextStartIso = new Date(now).toISOString();
+        const existingEndMs = endDateTime ? new Date(endDateTime).getTime() : 0;
+        // If no end time, or end time is already expired in the past, default to +2 hours
+        if (!endDateTime || isNaN(existingEndMs) || existingEndMs <= now) {
+          nextEndIso = new Date(now + 2 * 3600 * 1000).toISOString();
+        } else {
+          nextEndIso = toIsoOrEmpty(endDateTime);
+        }
+
+        setEnabled(true);
+        setStartDateTime(toLocalInputFormat(nextStartIso));
+        setEndDateTime(toLocalInputFormat(nextEndIso));
+      } else {
+        // Turning OFF
+        setEnabled(false);
+        nextStartIso = startDateTime ? toIsoOrEmpty(startDateTime) : '';
+        nextEndIso = endDateTime ? toIsoOrEmpty(endDateTime) : '';
       }
-      if (next && !endDateTime) {
-        nextEnd = toLocalISO(new Date(Date.now() + 2 * 3600 * 1000));
-        setEndDateTime(nextEnd);
-      }
+
       const result = await saveMaintenance({
         enabled: next,
-        startDateTime: nextStart,
-        endDateTime: nextEnd,
-        title,
-        message,
+        startDateTime: nextStartIso,
+        endDateTime: nextEndIso,
+        title: title.trim() || 'System Under Scheduled Maintenance',
+        message: message.trim() || 'Nexora Workforce is temporarily offline for scheduled system upgrades and infrastructure optimization.',
       });
       setSaveFeedback({
         type: 'success',
-        text: next ? 'Maintenance mode enabled immediately.' : 'Maintenance mode disabled.',
+        text: next
+          ? 'Maintenance mode enabled immediately. Non-admin visitors and contributors are now blocked.'
+          : 'Maintenance mode disabled. System returned to normal operations.',
       });
+      await refreshMaintenance();
     } catch (err: any) {
       setSaveFeedback({
         type: 'error',

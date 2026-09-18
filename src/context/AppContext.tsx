@@ -253,8 +253,14 @@ function computeMaintenanceState(config: MaintenanceConfig, now: number = Date.n
     };
   }
 
-  const startMs = config.startDateTime ? new Date(config.startDateTime).getTime() : 0;
-  const endMs = config.endDateTime ? new Date(config.endDateTime).getTime() : 0;
+  const parseTime = (val?: string): number => {
+    if (!val) return 0;
+    const t = new Date(val).getTime();
+    return isNaN(t) ? 0 : t;
+  };
+
+  const startMs = parseTime(config.startDateTime);
+  const endMs = parseTime(config.endDateTime);
 
   // Case 1: Start time is in the future
   if (startMs > 0 && now < startMs) {
@@ -268,7 +274,7 @@ function computeMaintenanceState(config: MaintenanceConfig, now: number = Date.n
   }
 
   // Case 2: End time has passed
-  if (endMs > 0 && now > endMs) {
+  if (endMs > 0 && now >= endMs) {
     return {
       config,
       isActive: false,
@@ -1940,20 +1946,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.config) {
-          setMaintenanceConfig((prev) => ({
-            ...prev,
-            ...data.config,
-          }));
+          setMaintenanceConfig((prev) => {
+            const prevUpdated = prev.lastUpdated ? new Date(prev.lastUpdated).getTime() : 0;
+            const serverUpdated = data.config.lastUpdated ? new Date(data.config.lastUpdated).getTime() : 0;
+            // Only overwrite if server has a valid update timestamp that is equal or newer,
+            // or if local state has no lastUpdated timestamp
+            if (serverUpdated >= prevUpdated || !prevUpdated) {
+              return {
+                ...prev,
+                ...data.config,
+              };
+            }
+            return prev;
+          });
         }
       }
     } catch {
       try {
         const firestoreConfig = await fetchMaintenanceFromFirestore();
         if (firestoreConfig) {
-          setMaintenanceConfig((prev) => ({
-            ...prev,
-            ...firestoreConfig,
-          }));
+          setMaintenanceConfig((prev) => {
+            const prevUpdated = prev.lastUpdated ? new Date(prev.lastUpdated).getTime() : 0;
+            const fsUpdated = firestoreConfig.lastUpdated ? new Date(firestoreConfig.lastUpdated).getTime() : 0;
+            if (fsUpdated >= prevUpdated || !prevUpdated) {
+              return {
+                ...prev,
+                ...firestoreConfig,
+              };
+            }
+            return prev;
+          });
         }
       } catch {}
     }
@@ -1965,10 +1987,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const unsub = subscribeToMaintenanceFirestore((newConfig) => {
       if (newConfig) {
-        setMaintenanceConfig((prev) => ({
-          ...prev,
-          ...newConfig,
-        }));
+        setMaintenanceConfig((prev) => {
+          const prevUpdated = prev.lastUpdated ? new Date(prev.lastUpdated).getTime() : 0;
+          const fsUpdated = newConfig.lastUpdated ? new Date(newConfig.lastUpdated).getTime() : 0;
+          if (fsUpdated >= prevUpdated || !prevUpdated) {
+            return {
+              ...prev,
+              ...newConfig,
+            };
+          }
+          return prev;
+        });
       }
     });
 
@@ -1991,6 +2020,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setMaintenanceConfig(nextConfig);
     saveStorage('maintenance_config', nextConfig);
 
+    // Save to Firestore first so real-time clients and serverless backends sync immediately
+    try {
+      await saveMaintenanceToFirestore(nextConfig);
+    } catch (e) {
+      console.warn('[Maintenance] Firestore save warning:', e);
+    }
+
     try {
       const res = await fetch('/api/maintenance', {
         method: 'POST',
@@ -1998,25 +2034,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(nextConfig),
       });
       const data = await res.json();
-      await saveMaintenanceToFirestore(nextConfig);
       return {
         success: true,
         message: data.message || 'Maintenance settings saved successfully.',
       };
     } catch {
-      try {
-        await saveMaintenanceToFirestore(nextConfig);
-      } catch {}
       return {
         success: true,
-        message: 'Maintenance settings saved locally and queued for synchronization.',
+        message: 'Maintenance settings saved locally and synchronized with database.',
       };
     }
   };
 
   const toggleMaintenance = async (enable?: boolean): Promise<{ success: boolean; message: string }> => {
-    const nextEnabled = typeof enable === 'boolean' ? enable : !maintenanceConfig.enabled;
-    return saveMaintenance({ enabled: nextEnabled });
+    const nextEnabled = typeof enable === 'boolean' ? enable : !maintenanceState.isActive;
+    const now = Date.now();
+    let nextStart = maintenanceConfig.startDateTime;
+    let nextEnd = maintenanceConfig.endDateTime;
+
+    if (nextEnabled) {
+      // Starting maintenance immediately: set start time to current ISO timestamp
+      nextStart = new Date(now).toISOString();
+      const existingEndMs = nextEnd ? new Date(nextEnd).getTime() : 0;
+      // If end time was expired or not set, default to 2 hours from now
+      if (!nextEnd || isNaN(existingEndMs) || existingEndMs <= now) {
+        nextEnd = new Date(now + 2 * 3600 * 1000).toISOString();
+      }
+    }
+
+    return saveMaintenance({
+      enabled: nextEnabled,
+      startDateTime: nextStart,
+      endDateTime: nextEnd,
+    });
   };
 
   return (

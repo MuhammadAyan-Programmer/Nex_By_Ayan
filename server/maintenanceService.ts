@@ -32,23 +32,39 @@ const DEFAULT_CONFIG: MaintenanceConfig = {
   updatedBy: 'admin@nexora.ai',
 };
 
-// Data persistence file location
-const DATA_DIR = path.join(process.cwd(), 'data');
-const FILE_PATH = path.join(DATA_DIR, 'maintenance.json');
+// Data persistence file location with fallback for read-only serverless filesystems (e.g., Vercel)
+let DATA_DIR = path.join(process.cwd(), 'data');
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  const testFile = path.join(DATA_DIR, '.write_test');
+  fs.writeFileSync(testFile, 'ok', 'utf-8');
+  fs.unlinkSync(testFile);
+} catch {
+  DATA_DIR = path.join('/tmp', 'nexora_data');
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (e) {
+    console.warn('[MaintenanceService] Fallback to memory-only storage:', e);
+  }
+}
+let FILE_PATH = path.join(DATA_DIR, 'maintenance.json');
 
 let inMemoryConfig: MaintenanceConfig = { ...DEFAULT_CONFIG };
 
 function initStorage(): void {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
     if (fs.existsSync(FILE_PATH)) {
       const raw = fs.readFileSync(FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
       inMemoryConfig = { ...DEFAULT_CONFIG, ...parsed };
     } else {
-      fs.writeFileSync(FILE_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8');
+      try {
+        fs.writeFileSync(FILE_PATH, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8');
+      } catch {}
     }
   } catch (err) {
     console.warn('[MaintenanceService] Storage init notice (using memory fallback):', err);
@@ -89,10 +105,16 @@ export function calculateMaintenanceStatus(
     };
   }
 
-  const startMs = config.startDateTime ? new Date(config.startDateTime).getTime() : 0;
-  const endMs = config.endDateTime ? new Date(config.endDateTime).getTime() : 0;
+  const parseTime = (val?: string): number => {
+    if (!val) return 0;
+    const t = new Date(val).getTime();
+    return isNaN(t) ? 0 : t;
+  };
 
-  // Case 1: Start time is set in the future -> Scheduled
+  const startMs = parseTime(config.startDateTime);
+  const endMs = parseTime(config.endDateTime);
+
+  // Case 1: Start time is explicitly set in the future -> Scheduled
   if (startMs > 0 && nowMs < startMs) {
     const timeUntilStart = startMs - nowMs;
     return {
@@ -103,8 +125,8 @@ export function calculateMaintenanceStatus(
     };
   }
 
-  // Case 2: End time is set in the past -> Ended / Expired
-  if (endMs > 0 && nowMs > endMs) {
+  // Case 2: End time is explicitly set and has already passed -> Ended / Expired
+  if (endMs > 0 && nowMs >= endMs) {
     return {
       status: 'ended',
       isActive: false,
@@ -152,5 +174,17 @@ export function updateMaintenanceConfig(
 
 export function toggleMaintenance(enabled?: boolean, updatedBy: string = 'admin@nexora.ai'): MaintenanceInfo {
   const nextEnabled = typeof enabled === 'boolean' ? enabled : !inMemoryConfig.enabled;
-  return updateMaintenanceConfig({ enabled: nextEnabled }, updatedBy);
+  const updates: Partial<MaintenanceConfig> = { enabled: nextEnabled };
+
+  if (nextEnabled) {
+    // When activating, ensure start time is current and expired past end time is reset
+    const now = Date.now();
+    const endMs = inMemoryConfig.endDateTime ? new Date(inMemoryConfig.endDateTime).getTime() : 0;
+    if (endMs > 0 && endMs <= now) {
+      updates.endDateTime = '';
+    }
+    updates.startDateTime = new Date().toISOString();
+  }
+
+  return updateMaintenanceConfig(updates, updatedBy);
 }
