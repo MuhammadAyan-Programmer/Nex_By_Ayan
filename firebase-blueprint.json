@@ -69,6 +69,20 @@
         "createdAt": { "type": "string", "description": "Creation date" }
       },
       "required": ["id", "name", "category", "status", "createdAt"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "System wide configuration including maintenance mode schedule",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Whether maintenance mode is enabled" },
+        "startDateTime": { "type": "string", "description": "Scheduled start time" },
+        "endDateTime": { "type": "string", "description": "Scheduled end time" },
+        "title": { "type": "string", "description": "Maintenance notice headline" },
+        "message": { "type": "string", "description": "Maintenance notice description" },
+        "lastUpdated": { "type": "string", "description": "Last updated timestamp" },
+        "updatedBy": { "type": "string", "description": "Administrator email who last updated" }
+      }
     }
   },
   "firestore": {
@@ -83,6 +97,10 @@
     "/projects/{projectId}": {
       "schema": "#/entities/Project",
       "description": "Workforce projects"
+    },
+    "/system/{docId}": {
+      "schema": "#/entities/SystemConfig",
+      "description": "System settings and maintenance schedule"
     }
   }
 }

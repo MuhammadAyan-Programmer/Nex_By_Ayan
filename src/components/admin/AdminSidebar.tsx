@@ -11,6 +11,7 @@ import {
   Settings,
   LogOut,
   UserCheck,
+  Wrench,
 } from 'lucide-react';
 import { LogoIcon } from '../common/Logo';
 
@@ -22,6 +23,7 @@ export type AdminTab =
   | 'approved-contributors'
   | 'project-updates'
   | 'payments'
+  | 'maintenance'
   | 'settings';
 
 interface AdminSidebarProps {
@@ -35,7 +37,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   setActiveTab,
   onOpenCreateProject,
 }) => {
-  const { currentUser, logout, applications, withdrawals } = useApp();
+  const { currentUser, logout, applications, withdrawals, maintenanceState } = useApp();
 
   const pendingApps = applications.filter(
     (a) => a.status === 'Applied' || a.status === 'Under Review'
@@ -45,7 +47,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
     (w) => w.status === 'Withdrawal Requested'
   ).length;
 
-  const navItems: { id: AdminTab; label: string; icon: React.ElementType; badge?: number }[] = [
+  const navItems: { id: AdminTab; label: string; icon: React.ElementType; badge?: number; statusBadge?: string }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'users', label: 'Users', icon: Users },
     { id: 'projects', label: 'Projects', icon: FolderKanban },
@@ -62,6 +64,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       label: 'Payments & Withdrawals',
       icon: Wallet,
       badge: pendingWithdrawals > 0 ? pendingWithdrawals : undefined,
+    },
+    {
+      id: 'maintenance',
+      label: 'Maintenance',
+      icon: Wrench,
+      statusBadge: maintenanceState.isActive ? 'ACTIVE' : maintenanceState.status === 'scheduled' ? 'PLAN' : undefined,
     },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -121,6 +129,17 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                 {item.badge !== undefined && (
                   <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-purple-500 text-white">
                     {item.badge}
+                  </span>
+                )}
+                {item.statusBadge && (
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold tracking-wider ${
+                      item.statusBadge === 'ACTIVE'
+                        ? 'bg-red-500 text-white animate-pulse'
+                        : 'bg-amber-500 text-white'
+                    }`}
+                  >
+                    {item.statusBadge}
                   </span>
                 )}
               </button>

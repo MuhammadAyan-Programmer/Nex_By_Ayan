@@ -36,13 +36,32 @@ export interface EmailSendResult {
   verificationUrl: string;
 }
 
-const CONFIG_PATH = path.join(process.cwd(), 'data', 'email_config.json');
+function getEmailConfigFile(): string {
+  const custom = path.join(process.cwd(), 'data', 'email_config.json');
+  try {
+    const dir = path.dirname(custom);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const test = path.join(dir, '.test_write');
+    fs.writeFileSync(test, '1');
+    fs.unlinkSync(test);
+    return custom;
+  } catch {
+    const tmp = path.join('/tmp', 'nexora_data');
+    try {
+      if (!fs.existsSync(tmp)) fs.mkdirSync(tmp, { recursive: true });
+    } catch {}
+    return path.join(tmp, 'email_config.json');
+  }
+}
 
 // Read dynamic configuration
 export function getStoredEmailConfig(): EmailConfigData | null {
   try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
+    const configPath = getEmailConfigFile();
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, 'utf-8');
       return JSON.parse(raw);
     }
   } catch (e) {
@@ -54,7 +73,8 @@ export function getStoredEmailConfig(): EmailConfigData | null {
 // Save dynamic configuration
 export function saveStoredEmailConfig(config: EmailConfigData): void {
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+    const configPath = getEmailConfigFile();
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (e) {
     console.error('[EmailService] Error saving email_config.json:', e);
   }
@@ -91,13 +111,16 @@ export function getSafeEmailConfig() {
 }
 
 export function buildVerificationUrl(token: string, reqProtocol?: string, reqHost?: string): string {
-  let base = process.env.APP_URL;
-  if (!base && reqHost) {
+  let base = '';
+  if (reqHost) {
     const proto = reqProtocol || 'https';
     base = `${proto}://${reqHost}`;
-  }
-  if (!base) {
-    base = 'https://ais-dev-4k2pai52cy3vrk5e4f7gw2-445900793441.asia-east1.run.app';
+  } else if (process.env.APP_URL) {
+    base = process.env.APP_URL;
+  } else if (process.env.VERCEL_URL) {
+    base = `https://${process.env.VERCEL_URL}`;
+  } else {
+    base = 'https://nexoraworkforce-seven.vercel.app';
   }
   const cleanBase = base.replace(/\/+$/, '');
   return `${cleanBase}/?verifyToken=${encodeURIComponent(token)}`;

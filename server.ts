@@ -21,6 +21,11 @@ import {
   saveStoredEmailConfig,
   testEmailConnection,
 } from './server/emailService.ts';
+import {
+  getMaintenanceInfo,
+  updateMaintenanceConfig,
+  toggleMaintenance,
+} from './server/maintenanceService.ts';
 
 dotenv.config();
 
@@ -232,13 +237,16 @@ apiRouter.post('/auth/resend-verification', async (req: Request, res: Response) 
       });
     }
 
+    const host = req.get('x-forwarded-host') || req.get('host');
+    const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+
     const emailResult = await sendVerificationEmail({
       toEmail: norm,
       recipientName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Contributor',
       verificationToken: tokenData.token,
       expiresAt: tokenData.expiresAt,
-      reqHost: req.get('host'),
-      reqProtocol: req.protocol,
+      reqHost: host,
+      reqProtocol: proto,
     });
 
     return res.json({
@@ -248,11 +256,12 @@ apiRouter.post('/auth/resend-verification', async (req: Request, res: Response) 
       emailSent: emailResult.success,
       emailProvider: emailResult.provider,
       emailError: emailResult.error,
-      verificationToken: emailResult.success ? undefined : tokenData.token,
+      verificationToken: tokenData.token,
+      verificationUrl: emailResult.verificationUrl,
       message: emailResult.success
         ? `A new verification email has been sent to your inbox (${norm}). Please click the link to activate your account.`
         : (emailResult.error
-            ? `New verification link generated! Note: Delivery failed (${emailResult.error}). Please check your SMTP settings in Settings panel.`
+            ? `Verification email could not be delivered (${emailResult.error}). Please check your SMTP settings in Settings panel or use direct activation below.`
             : `We've sent a verification email to your registered email. Please verify your email to activate your account.`),
     });
   } catch (err: any) {
@@ -343,14 +352,17 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
 
     await db.createUser(newUser);
 
+    const host = req.get('x-forwarded-host') || req.get('host');
+    const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+
     // Dispatch real email verification to user's inbox
     const emailResult = await sendVerificationEmail({
       toEmail: normalizedEmail,
       recipientName: `${firstName} ${lastName}`.trim(),
       verificationToken,
       expiresAt: verificationTokenExpiresAt,
-      reqHost: req.get('host'),
-      reqProtocol: req.protocol,
+      reqHost: host,
+      reqProtocol: proto,
     });
 
     // Rule 3: DO NOT automatically log the user into the dashboard after registration.
@@ -363,11 +375,12 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
       emailSent: emailResult.success,
       emailProvider: emailResult.provider,
       emailError: emailResult.error,
-      verificationToken: emailResult.success ? undefined : verificationToken,
+      verificationToken,
+      verificationUrl: emailResult.verificationUrl,
       message: emailResult.success
         ? `We've sent a verification email to your registered email (${normalizedEmail}). Please check your inbox and click the verification link to activate your account.`
         : (emailResult.error
-            ? `Account created! Verification email could not be sent (${emailResult.error}). Please check your SMTP settings in Settings panel.`
+            ? `Account created! Verification email could not be sent (${emailResult.error}). Please configure your Gmail App Password in Settings or use direct activation below.`
             : `We've sent a verification email to your registered email. Please verify your email to activate your account.`),
     });
   } catch (err: any) {
@@ -566,6 +579,55 @@ apiRouter.post('/admin/email-test', async (req: Request, res: Response) => {
     }
     const result = await testEmailConnection(String(targetEmail).trim());
     res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// =================== SYSTEM MAINTENANCE MODE API ===================
+
+// GET /api/maintenance - Public/Admin check for current maintenance mode status
+apiRouter.get('/maintenance', async (_req: Request, res: Response) => {
+  try {
+    const info = getMaintenanceInfo();
+    res.json({ success: true, ...info });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/maintenance - Update maintenance schedule & status
+apiRouter.post('/maintenance', async (req: Request, res: Response) => {
+  try {
+    const { enabled, startDateTime, endDateTime, title, message, updatedBy } = req.body || {};
+    const updates: any = {};
+    if (typeof enabled === 'boolean') updates.enabled = enabled;
+    if (typeof startDateTime === 'string') updates.startDateTime = startDateTime;
+    if (typeof endDateTime === 'string') updates.endDateTime = endDateTime;
+    if (typeof title === 'string') updates.title = title.trim();
+    if (typeof message === 'string') updates.message = message.trim();
+
+    const info = updateMaintenanceConfig(updates, updatedBy || 'admin@nexora.ai');
+    res.json({
+      success: true,
+      message: 'Maintenance schedule updated successfully.',
+      ...info,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/maintenance/toggle - Quick toggle
+apiRouter.post('/maintenance/toggle', async (req: Request, res: Response) => {
+  try {
+    const { enabled, updatedBy } = req.body || {};
+    const info = toggleMaintenance(enabled, updatedBy || 'admin@nexora.ai');
+    res.json({
+      success: true,
+      message: info.isActive ? 'Maintenance mode enabled.' : 'Maintenance mode disabled.',
+      ...info,
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -868,15 +930,18 @@ apiRouter.delete('/project-updates/:id', async (req: Request, res: Response) => 
   }
 });
 
+// Root health check for /api and /api/health
+apiRouter.get(['/', '/health'], async (_req: Request, res: Response) => {
+  res.json({ status: 'ok', service: 'Nexora Workforce API', time: new Date().toISOString() });
+});
+
 // =================== RESET API ===================
 apiRouter.post('/reset', async (_req: Request, res: Response) => {
   res.json({ success: true, message: 'Reset acknowledged.' });
 });
 
-// Mount the API Router on both '/api' and '/'
-// This guarantees that whether a request comes as '/api/projects' or is rewritten to '/projects' on Vercel, it ALWAYS resolves!
+// Mount the API Router strictly on '/api' so root '/' serves the React SPA via Vite
 app.use('/api', apiRouter);
-app.use('/', apiRouter);
 
 // =================== VITE & STATIC SERVING ===================
 
@@ -884,12 +949,21 @@ async function startServer() {
   app.use(express.static(path.join(process.cwd(), 'public')));
 
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (viteErr) {
+      console.warn('[Server] Vite middleware not available, falling back to static:', viteErr);
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
@@ -903,9 +977,31 @@ async function startServer() {
   });
 }
 
-// Start standalone server unless running as a Vercel serverless function
-if (!process.env.VERCEL) {
-  startServer();
+// Start standalone server only when executed directly (not when imported in serverless/api)
+const isServerless = Boolean(
+  process.env.VERCEL ||
+  process.env.NOW_REGION ||
+  process.env.AWS_LAMBDA_FUNCTION_NAME ||
+  process.env.LAMBDA_TASK_ROOT ||
+  process.env.NETLIFY
+);
+
+const isRunDirectly = Boolean(
+  (typeof require !== 'undefined' && require.main === module) ||
+  (process.argv[1] && (
+    process.argv[1].endsWith('server.ts') ||
+    process.argv[1].endsWith('server.cjs') ||
+    process.argv[1].endsWith('server.js')
+  ))
+);
+
+if (!isServerless && isRunDirectly && process.env.NODE_ENV !== 'test') {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+  });
 }
+
+// Export for both ESM and CommonJS (Vercel serverless compatibility)
+
 
 export default app;

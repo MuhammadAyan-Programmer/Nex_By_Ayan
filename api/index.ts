@@ -1,7 +1,7 @@
-import type { IncomingMessage, ServerResponse } from 'http';
-import app from '../server.ts';
+// Vercel Serverless Function entrypoint
+// @ts-ignore
+import server from '../dist/server.cjs';
 
-// Serverless function entrypoint for Vercel deployment
-export default function handler(req: IncomingMessage, res: ServerResponse) {
-  return (app as any)(req, res);
-}
+const app = (server as any).default?.default || (server as any).default || server;
+
+export default app;

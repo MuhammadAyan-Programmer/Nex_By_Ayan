@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   RefreshCw,
   AlertTriangle,
+  Wrench,
 } from 'lucide-react';
 
 interface AdminDashboardHomeProps {
@@ -36,6 +37,7 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
     isSyncing,
     lastSyncedAt,
     syncError,
+    maintenanceState,
   } = useApp();
 
   // Statistics according to Section 31
@@ -104,6 +106,34 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Maintenance Mode Active Alert Banner */}
+      {maintenanceState.isActive && (
+        <div
+          id="admin-maintenance-active-banner"
+          className="p-4 bg-red-50 border border-red-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-900 shadow-xs"
+        >
+          <div className="flex items-center gap-3">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping shrink-0" />
+            <div>
+              <p className="text-sm font-bold flex items-center gap-2">
+                <Wrench className="w-4 h-4 text-red-600" />
+                Maintenance Mode is Currently ACTIVE
+              </p>
+              <p className="text-xs text-red-700 mt-0.5">
+                Public visitors and contributors are currently locked out and viewing the maintenance page.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate('maintenance')}
+            className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
+          >
+            Manage Schedule
+          </button>
+        </div>
+      )}
 
       {/* Database Connection Warning (Only show if there is no data loaded) */}
       {syncError && projects.length === 0 && (

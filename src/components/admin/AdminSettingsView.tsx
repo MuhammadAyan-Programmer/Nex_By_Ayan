@@ -13,10 +13,17 @@ import {
   ShieldCheck,
   KeyRound,
   Check,
+  Wrench,
+  Power,
+  Calendar,
 } from 'lucide-react';
 
-export const AdminSettingsView: React.FC = () => {
-  const { resetToDefaults } = useApp();
+interface AdminSettingsViewProps {
+  onNavigateToMaintenance?: () => void;
+}
+
+export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({ onNavigateToMaintenance }) => {
+  const { resetToDefaults, maintenanceState, toggleMaintenance } = useApp();
   const [resetSuccess, setResetSuccess] = useState(false);
 
   // Email Config State
@@ -161,6 +168,89 @@ export const AdminSettingsView: React.FC = () => {
           All platform demo data reset to seed state successfully!
         </div>
       )}
+
+      {/* Maintenance Mode Quick Card */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Wrench className="w-4 h-4 text-purple-600" /> Maintenance Mode & System Availability
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Put the entire application into maintenance mode or schedule automated maintenance periods.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-xs font-bold px-2.5 py-1 rounded-md border uppercase tracking-wider ${
+                maintenanceState.isActive
+                  ? 'bg-red-50 text-red-700 border-red-200 animate-pulse'
+                  : maintenanceState.status === 'scheduled'
+                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              }`}
+            >
+              {maintenanceState.isActive
+                ? 'Active Now'
+                : maintenanceState.status === 'scheduled'
+                ? 'Scheduled'
+                : 'Operational (Normal)'}
+            </span>
+
+            {onNavigateToMaintenance && (
+              <button
+                type="button"
+                onClick={onNavigateToMaintenance}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition-colors cursor-pointer"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                Schedule Settings
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+            <span className="text-[10px] text-slate-500 font-bold uppercase block">Schedule Status</span>
+            <span className="font-semibold text-slate-800 mt-0.5 block">
+              {maintenanceState.config.enabled ? 'Enabled' : 'Disabled'}
+            </span>
+          </div>
+
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+            <span className="text-[10px] text-slate-500 font-bold uppercase block">Scheduled Start</span>
+            <span className="font-semibold text-slate-800 mt-0.5 block truncate">
+              {maintenanceState.config.startDateTime || 'Immediate'}
+            </span>
+          </div>
+
+          <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+            <span className="text-[10px] text-slate-500 font-bold uppercase block">Scheduled End</span>
+            <span className="font-semibold text-slate-800 mt-0.5 block truncate">
+              {maintenanceState.config.endDateTime || 'Manual'}
+            </span>
+          </div>
+        </div>
+
+        <div className="pt-2 flex items-center justify-between">
+          <p className="text-xs text-slate-500">
+            Admin Panel always remains accessible to administrators regardless of maintenance status.
+          </p>
+          <button
+            type="button"
+            onClick={() => toggleMaintenance()}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              maintenanceState.isActive
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-purple-600 hover:bg-purple-700 text-white'
+            }`}
+          >
+            {maintenanceState.isActive ? 'Disable Maintenance' : 'Enable Maintenance Mode'}
+          </button>
+        </div>
+      </div>
 
       {/* Real Email Delivery & SMTP Configuration */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-2xs space-y-5">

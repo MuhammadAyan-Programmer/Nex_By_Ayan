@@ -191,3 +191,23 @@ export interface NotificationItem {
   date: string;
   read: boolean;
 }
+
+export interface MaintenanceConfig {
+  enabled: boolean;
+  startDateTime: string; // ISO string or local YYYY-MM-DDTHH:mm
+  endDateTime: string;   // ISO string or local YYYY-MM-DDTHH:mm
+  title: string;
+  message: string;
+  lastUpdated?: string;
+  updatedBy?: string;
+}
+
+export type MaintenanceStatus = 'disabled' | 'scheduled' | 'active' | 'ended';
+
+export interface MaintenanceState {
+  config: MaintenanceConfig;
+  isActive: boolean;
+  status: MaintenanceStatus;
+  timeRemainingMs: number;
+  timeUntilStartMs: number;
+}

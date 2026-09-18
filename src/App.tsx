@@ -28,9 +28,11 @@ import { AdminProjectUpdatesView } from './components/admin/AdminProjectUpdatesV
 import { AdminPaymentsView } from './components/admin/AdminPaymentsView';
 import { AdminUsersView } from './components/admin/AdminUsersView';
 import { AdminSettingsView } from './components/admin/AdminSettingsView';
+import { AdminMaintenanceView } from './components/admin/AdminMaintenanceView';
+import { MaintenancePage } from './components/common/MaintenancePage';
 
 const AppContent: React.FC = () => {
-  const { currentUser, projects, logout } = useApp();
+  const { currentUser, projects, logout, maintenanceState, toggleMaintenance } = useApp();
 
   // Auth & Project Modals
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -106,6 +108,37 @@ const AppContent: React.FC = () => {
     }
     setSelectedProjectForApp(project);
   };
+
+  // 0. SYSTEM UNDER MAINTENANCE (Applies to all non-admin users across the entire application)
+  if (maintenanceState.isActive && currentUser?.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-950">
+        <MaintenancePage
+          onAdminLoginRequested={() => {
+            setAuthMode('login');
+            setIsAuthOpen(true);
+          }}
+        />
+
+        <AuthModal
+          isOpen={isAuthOpen}
+          initialMode="login"
+          onClose={() => setIsAuthOpen(false)}
+          onOpenVerification={(data) => {
+            setVerificationModal({
+              isOpen: true,
+              email: data.email,
+              token: data.token,
+              expiresAt: data.expiresAt,
+              initialState: data.initialState,
+              emailSent: data.emailSent,
+              emailError: data.emailError,
+            });
+          }}
+        />
+      </div>
+    );
+  }
 
   // 1. PUBLIC WEBSITE VIEW (When not logged in)
   if (!currentUser) {
@@ -196,6 +229,42 @@ const AppContent: React.FC = () => {
         {/* Main Dashboard Content Area */}
         <main className="flex-1 min-w-0 p-6 lg:p-8 overflow-y-auto max-h-screen">
           <div className="max-w-7xl mx-auto">
+            {/* Top Admin Global Maintenance Alert Bar */}
+            {maintenanceState.isActive && (
+              <div
+                id="admin-top-maintenance-status-bar"
+                className="mb-6 p-4 bg-red-600 text-white rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping shrink-0" />
+                  <div>
+                    <span className="font-extrabold text-sm block">System Under Maintenance is Currently ACTIVE</span>
+                    <span className="opacity-90">
+                      All non-admin visitors and contributors are blocked from regular views and are seeing the maintenance screen.
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {adminTab !== 'maintenance' && (
+                    <button
+                      type="button"
+                      onClick={() => setAdminTab('maintenance')}
+                      className="px-3.5 py-1.5 bg-white/20 hover:bg-white/30 text-white font-bold rounded-xl transition-colors cursor-pointer"
+                    >
+                      Open Maintenance Schedule
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleMaintenance(false)}
+                    className="px-3.5 py-1.5 bg-white text-red-700 hover:bg-red-50 font-bold rounded-xl transition-colors cursor-pointer shadow-xs"
+                  >
+                    Disable Maintenance Now
+                  </button>
+                </div>
+              </div>
+            )}
+
             {adminTab === 'dashboard' && (
               <AdminDashboardHome
                 onNavigate={setAdminTab}
@@ -235,7 +304,8 @@ const AppContent: React.FC = () => {
                 initialProjectId={adminCreditTarget?.projectId}
               />
             )}
-            {adminTab === 'settings' && <AdminSettingsView />}
+            {adminTab === 'maintenance' && <AdminMaintenanceView />}
+            {adminTab === 'settings' && <AdminSettingsView onNavigateToMaintenance={() => setAdminTab('maintenance')} />}
           </div>
         </main>
 

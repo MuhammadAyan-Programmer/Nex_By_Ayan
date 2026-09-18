@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import { useApp } from '../../context/AppContext';
-import { Mail, CheckCircle2, Clock, AlertTriangle, ArrowRight, RefreshCw, X, Sparkles, ShieldCheck, KeyRound, Check } from 'lucide-react';
+import { Mail, CheckCircle2, Clock, AlertTriangle, ArrowRight, RefreshCw, X, Sparkles, ShieldCheck, KeyRound, Check, Copy } from 'lucide-react';
 import { LogoIcon } from '../common/Logo';
 
 interface EmailVerificationModalProps {
@@ -51,6 +51,7 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
   const [resendMessage, setResendMessage] = useState('');
   const [secondsRemaining, setSecondsRemaining] = useState(300);
   const [instantActivating, setInstantActivating] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Sync state whenever props change or modal is opened
   useEffect(() => {
@@ -430,40 +431,71 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
                 </div>
               </div>
 
-              {/* Instant Verification Fallback when email sending was not delivered */}
-              {deliveryStatus.sent === false && activeToken && (
-                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl mb-4 text-left shadow-2xs">
-                  <div className="flex items-start gap-2 mb-2">
-                    <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              {/* Real Email Guidance */}
+              {deliveryStatus.sent !== false && (
+                <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl mb-3 text-left">
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Check your email inbox (including the <strong>Spam</strong> or <strong>Promotions</strong> folder). Click the link inside to verify.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Instant Verification Fallback & Direct Link: Accessible whenever activeToken exists */}
+              {activeToken && (
+                <div className={`p-3.5 rounded-xl mb-4 text-left border transition-all ${
+                  deliveryStatus.sent === false
+                    ? 'bg-emerald-50 border-emerald-200 shadow-2xs'
+                    : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className="flex items-start gap-2 mb-2.5">
+                    <KeyRound className={`w-4 h-4 shrink-0 mt-0.5 ${
+                      deliveryStatus.sent === false ? 'text-emerald-600' : 'text-slate-600'
+                    }`} />
                     <div>
-                      <span className="text-xs font-bold text-emerald-900 block">Instant Activation Available</span>
-                      <p className="text-[11px] text-emerald-700 leading-relaxed">
-                        To ensure you are not blocked while the administrator connects the 16-character Google App Password in Settings, you can activate your account directly now:
+                      <span className={`text-xs font-bold block ${
+                        deliveryStatus.sent === false ? 'text-emerald-900' : 'text-slate-800'
+                      }`}>
+                        {deliveryStatus.sent === false
+                          ? 'Instant Account Activation'
+                          : 'Didn\'t receive the email? Direct Activation'}
+                      </span>
+                      <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">
+                        {deliveryStatus.sent === false
+                          ? 'Email delivery is awaiting configuration in Admin Settings. You can activate directly below:'
+                          : 'If your email provider delays delivery or filters to spam, you can verify your account instantly:'}
                       </p>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    id="btn-instant-activate-account"
-                    disabled={instantActivating}
-                    onClick={handleInstantActivate}
-                    className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    <KeyRound className="w-3.5 h-3.5" />
-                    {instantActivating ? 'Activating Account...' : 'Instant Activate & Verify Account Now'}
-                  </button>
-                </div>
-              )}
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      id="btn-instant-activate-account"
+                      disabled={instantActivating}
+                      onClick={handleInstantActivate}
+                      className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      {instantActivating ? 'Activating Account...' : 'Instant Activate & Verify Account Now'}
+                    </button>
 
-              {/* Real Email Guidance */}
-              {deliveryStatus.sent !== false && (
-                <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl mb-4 text-left">
-                  <div className="flex items-start gap-2">
-                    <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      Check your email inbox (including the <strong>Spam</strong> or <strong>Promotions</strong> tab). Click the secure link inside the email to complete verification.
-                    </p>
+                    <button
+                      type="button"
+                      id="btn-copy-verification-link"
+                      onClick={() => {
+                        const link = `${window.location.origin}/?verifyToken=${encodeURIComponent(activeToken)}`;
+                        navigator.clipboard.writeText(link);
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 3000);
+                      }}
+                      className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+                      {copiedLink ? 'Link Copied to Clipboard!' : 'Copy Direct Verification Link'}
+                    </button>
                   </div>
                 </div>
               )}

@@ -10,6 +10,9 @@ import {
   NotificationItem,
   ApplicationStatus,
   UploadedFileMeta,
+  MaintenanceConfig,
+  MaintenanceState,
+  MaintenanceStatus,
 } from '../types';
 import {
   INITIAL_PROJECTS,
@@ -30,6 +33,9 @@ import {
   subscribeToApplicationsFirestore,
   saveProjectToFirestore,
   fetchProjectsFromFirestore,
+  saveMaintenanceToFirestore,
+  fetchMaintenanceFromFirestore,
+  subscribeToMaintenanceFirestore,
   isQuotaExhausted,
 } from '../lib/firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -155,6 +161,12 @@ interface AppContextType {
     withdrawnAmount: number;
     pendingWithdrawal: number;
   };
+
+  // System Maintenance
+  maintenanceState: MaintenanceState;
+  saveMaintenance: (config: Partial<MaintenanceConfig>) => Promise<{ success: boolean; message: string }>;
+  toggleMaintenance: (enable?: boolean) => Promise<{ success: boolean; message: string }>;
+  refreshMaintenance: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -217,6 +229,63 @@ function saveLocalPassword(email: string, pass: string): void {
     map[email.trim().toLowerCase()] = pass;
     localStorage.setItem('nexora_user_passwords', JSON.stringify(map));
   } catch {}
+}
+
+const DEFAULT_MAINTENANCE_CONFIG: MaintenanceConfig = {
+  enabled: false,
+  startDateTime: '',
+  endDateTime: '',
+  title: 'System Under Scheduled Maintenance',
+  message:
+    'Nexora Workforce is temporarily offline for scheduled system upgrades and infrastructure optimization. Project applications, contributor portals, and task evaluations will resume immediately once maintenance concludes.',
+  lastUpdated: new Date().toISOString(),
+  updatedBy: 'admin@nexora.ai',
+};
+
+function computeMaintenanceState(config: MaintenanceConfig, now: number = Date.now()): MaintenanceState {
+  if (!config.enabled) {
+    return {
+      config,
+      isActive: false,
+      status: 'disabled',
+      timeRemainingMs: 0,
+      timeUntilStartMs: 0,
+    };
+  }
+
+  const startMs = config.startDateTime ? new Date(config.startDateTime).getTime() : 0;
+  const endMs = config.endDateTime ? new Date(config.endDateTime).getTime() : 0;
+
+  // Case 1: Start time is in the future
+  if (startMs > 0 && now < startMs) {
+    return {
+      config,
+      isActive: false,
+      status: 'scheduled',
+      timeRemainingMs: endMs > 0 ? Math.max(0, endMs - now) : 0,
+      timeUntilStartMs: Math.max(0, startMs - now),
+    };
+  }
+
+  // Case 2: End time has passed
+  if (endMs > 0 && now > endMs) {
+    return {
+      config,
+      isActive: false,
+      status: 'ended',
+      timeRemainingMs: 0,
+      timeUntilStartMs: 0,
+    };
+  }
+
+  // Case 3: Maintenance currently active
+  return {
+    config,
+    isActive: true,
+    status: 'active',
+    timeRemainingMs: endMs > 0 ? Math.max(0, endMs - now) : 0,
+    timeUntilStartMs: 0,
+  };
 }
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -943,7 +1012,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email: normEmail,
         verificationToken: localToken,
         expiresAt: localExpiresAt,
-        message: "We've sent a verification email to your registered email. Please verify your email to activate your account.",
+        emailSent: false,
+        emailError: 'Email service could not deliver verification email automatically. Please use the Instant Verify button below.',
+        message: "Account created! Email could not be delivered automatically. Please use the Instant Activate button below.",
       };
     }
   };
@@ -1009,9 +1080,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
       return {
         success: true,
-        message: "We've sent a verification email to your registered email. Please verify your email to activate your account.",
+        message: "New verification link generated! Note: Delivery failed. Please use the Instant Verify button below.",
         verificationToken: token,
         expiresAt,
+        emailSent: false,
+        emailError: 'Email service could not dispatch verification email automatically. Please use the Instant Verify button below.',
       };
     }
   };
@@ -1839,6 +1912,113 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [currentUser, earnings, withdrawals]);
 
+  // Maintenance state and scheduling
+  const [maintenanceConfig, setMaintenanceConfig] = useState<MaintenanceConfig>(() =>
+    loadStorage<MaintenanceConfig>('maintenance_config', DEFAULT_MAINTENANCE_CONFIG)
+  );
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
+
+  // 1-second live clock ticker to guarantee exact-second automatic schedule activation and deactivation
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const maintenanceState = useMemo(() => {
+    return computeMaintenanceState(maintenanceConfig, currentTime);
+  }, [maintenanceConfig, currentTime]);
+
+  useEffect(() => {
+    saveStorage('maintenance_config', maintenanceConfig);
+  }, [maintenanceConfig]);
+
+  const refreshMaintenance = useCallback(async () => {
+    try {
+      const res = await fetch('/api/maintenance');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.config) {
+          setMaintenanceConfig((prev) => ({
+            ...prev,
+            ...data.config,
+          }));
+        }
+      }
+    } catch {
+      try {
+        const firestoreConfig = await fetchMaintenanceFromFirestore();
+        if (firestoreConfig) {
+          setMaintenanceConfig((prev) => ({
+            ...prev,
+            ...firestoreConfig,
+          }));
+        }
+      } catch {}
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMaintenance();
+    const interval = setInterval(refreshMaintenance, 8000);
+
+    const unsub = subscribeToMaintenanceFirestore((newConfig) => {
+      if (newConfig) {
+        setMaintenanceConfig((prev) => ({
+          ...prev,
+          ...newConfig,
+        }));
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      if (unsub) unsub();
+    };
+  }, [refreshMaintenance]);
+
+  const saveMaintenance = async (
+    updates: Partial<MaintenanceConfig>
+  ): Promise<{ success: boolean; message: string }> => {
+    const nextConfig: MaintenanceConfig = {
+      ...maintenanceConfig,
+      ...updates,
+      lastUpdated: new Date().toISOString(),
+      updatedBy: currentUser?.email || 'admin@nexora.ai',
+    };
+
+    setMaintenanceConfig(nextConfig);
+    saveStorage('maintenance_config', nextConfig);
+
+    try {
+      const res = await fetch('/api/maintenance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nextConfig),
+      });
+      const data = await res.json();
+      await saveMaintenanceToFirestore(nextConfig);
+      return {
+        success: true,
+        message: data.message || 'Maintenance settings saved successfully.',
+      };
+    } catch {
+      try {
+        await saveMaintenanceToFirestore(nextConfig);
+      } catch {}
+      return {
+        success: true,
+        message: 'Maintenance settings saved locally and queued for synchronization.',
+      };
+    }
+  };
+
+  const toggleMaintenance = async (enable?: boolean): Promise<{ success: boolean; message: string }> => {
+    const nextEnabled = typeof enable === 'boolean' ? enable : !maintenanceConfig.enabled;
+    return saveMaintenance({ enabled: nextEnabled });
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -1902,6 +2082,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         userBalance,
         firebaseConnected,
         firebaseProjectId: firebaseConfig.projectId,
+
+        maintenanceState,
+        saveMaintenance,
+        toggleMaintenance,
+        refreshMaintenance,
       }}
     >
       {children}

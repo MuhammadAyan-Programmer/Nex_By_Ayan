@@ -14,7 +14,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import type { UserProfile, ProjectApplication, Project } from '../types';
+import type { UserProfile, ProjectApplication, Project, MaintenanceConfig } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase safely
@@ -460,4 +460,88 @@ export async function fetchProjectsFromFirestore(): Promise<Project[]> {
     2500,
     []
   );
+}
+
+// --- Firestore System Maintenance Helpers ---
+
+/**
+ * Save maintenance configuration to Firebase Firestore
+ */
+export async function saveMaintenanceToFirestore(config: MaintenanceConfig): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
+  const path = 'system/maintenance';
+  return withTimeout(
+    (async () => {
+      try {
+        const docRef = doc(db, 'system', 'maintenance');
+        await setDoc(
+          docRef,
+          {
+            ...config,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+        console.log('[Firebase] Maintenance configuration saved to Firestore');
+        return true;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+        return false;
+      }
+    })(),
+    2500,
+    false
+  );
+}
+
+/**
+ * Fetch maintenance configuration from Firebase Firestore
+ */
+export async function fetchMaintenanceFromFirestore(): Promise<MaintenanceConfig | null> {
+  if (isQuotaExhausted()) return null;
+  const path = 'system/maintenance';
+  return withTimeout(
+    (async () => {
+      try {
+        const docRef = doc(db, 'system', 'maintenance');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          return snap.data() as MaintenanceConfig;
+        }
+        return null;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, path);
+        return null;
+      }
+    })(),
+    2500,
+    null
+  );
+}
+
+/**
+ * Subscribe to real-time maintenance updates from Firebase Firestore
+ */
+export function subscribeToMaintenanceFirestore(
+  onUpdate: (config: MaintenanceConfig) => void
+): () => void {
+  if (isQuotaExhausted()) return () => {};
+  const path = 'system/maintenance';
+  try {
+    const docRef = doc(db, 'system', 'maintenance');
+    return onSnapshot(
+      docRef,
+      (snap) => {
+        if (snap.exists()) {
+          onUpdate(snap.data() as MaintenanceConfig);
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return () => {};
+  }
 }
