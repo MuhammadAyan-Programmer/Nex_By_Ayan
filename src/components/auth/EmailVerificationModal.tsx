@@ -400,16 +400,16 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
 
                 {deliveryStatus.sent === false ? (
                   <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 leading-relaxed text-left mt-2">
-                    <span className="font-bold block mb-1">⚠️ Email Dispatch Notice:</span>
-                    Could not deliver verification email to <code className="font-mono font-semibold">{currentEmail}</code>:
+                    <span className="font-bold block mb-1">⚠️ Firebase Email Status:</span>
+                    Could not dispatch Firebase verification email to <code className="font-mono font-semibold">{currentEmail}</code>:
                     <br />
                     <span className="text-[11px] text-amber-900 font-medium">
-                      {deliveryStatus.error || 'Google App Password required for Gmail SMTP.'}
+                      {deliveryStatus.error || 'Firebase Email/Password provider configuration required.'}
                     </span>
                   </p>
                 ) : (
                   <p className="text-xs text-slate-600 leading-relaxed max-w-xs mx-auto">
-                    We've sent a real email verification link to your registered email address. Please click the link to verify your email and activate your account.
+                    Firebase Authentication has dispatched a verification email directly to your registered email address. Please click the link to activate your account.
                   </p>
                 )}
               </div>
@@ -437,7 +437,7 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
                   <div className="flex items-start gap-2">
                     <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      Check your email inbox (including the <strong>Spam</strong> or <strong>Promotions</strong> folder). Click the link inside to verify.
+                      Check your email inbox (including the <strong>Spam</strong> or <strong>Promotions</strong> folder). Click the verification link sent by Firebase to verify.
                     </p>
                   </div>
                 </div>

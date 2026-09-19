@@ -24,6 +24,9 @@ export interface StoredUser {
   profileStatus: 'Complete' | 'Incomplete';
   avatar: string;
   status: 'active' | 'suspended';
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
+  approvalDate?: string;
+  rejectionReason?: string;
   createdAt: string;
   verificationToken?: string;
   verificationTokenExpiresAt?: number;
@@ -236,7 +239,12 @@ class DatabaseService {
   private updatesCache: StoredProjectUpdate[] = [];
 
   constructor() {
-    this.usersCache = loadJsonFile<StoredUser[]>('users.json', []);
+    const rawUsers = loadJsonFile<StoredUser[]>('users.json', []);
+    // Ensure all existing users are approved by default so they are never blocked
+    this.usersCache = rawUsers.map((u) => ({
+      ...u,
+      approvalStatus: u.approvalStatus || 'approved',
+    }));
     const diskProjects = loadJsonFile<StoredProject[]>('projects.json', [CANONICAL_ARABIC_PROJECT]);
     // Ensure only the Arabic project is loaded
     this.projectsCache = diskProjects.filter((p) => p.id === 'proj-arabic-en-001');
@@ -278,6 +286,7 @@ class DatabaseService {
         email: CANONICAL_ADMIN_EMAIL,
         role: 'admin',
         isEmailVerified: true,
+        approvalStatus: 'approved',
         profileStatus: 'Complete',
         avatar: existing.avatar || 'AN',
         country: existing.country || 'Global',
@@ -305,6 +314,7 @@ class DatabaseService {
         password: hashedPw,
         role: 'admin',
         isEmailVerified: true,
+        approvalStatus: 'approved',
         profileStatus: 'Complete',
         avatar: 'AN',
         country: 'Global',
@@ -383,6 +393,9 @@ class DatabaseService {
         profile_status TEXT DEFAULT 'Complete',
         avatar TEXT,
         status TEXT DEFAULT 'active',
+        approval_status TEXT DEFAULT 'approved',
+        approval_date TEXT,
+        rejection_reason TEXT,
         created_at TEXT
       );
 
@@ -468,6 +481,15 @@ class DatabaseService {
         EXCEPTION WHEN duplicate_column THEN END;
         BEGIN
           ALTER TABLE users ADD COLUMN cv_link TEXT;
+        EXCEPTION WHEN duplicate_column THEN END;
+        BEGIN
+          ALTER TABLE users ADD COLUMN approval_status TEXT DEFAULT 'approved';
+        EXCEPTION WHEN duplicate_column THEN END;
+        BEGIN
+          ALTER TABLE users ADD COLUMN approval_date TEXT;
+        EXCEPTION WHEN duplicate_column THEN END;
+        BEGIN
+          ALTER TABLE users ADD COLUMN rejection_reason TEXT;
         EXCEPTION WHEN duplicate_column THEN END;
       END $$;
     `);
@@ -610,6 +632,9 @@ class DatabaseService {
         profileStatus: r.profile_status,
         avatar: r.avatar,
         status: r.status,
+        approvalStatus: r.approval_status || (r.role === 'admin' ? 'approved' : 'approved'),
+        approvalDate: r.approval_date,
+        rejectionReason: r.rejection_reason,
         createdAt: r.created_at,
       }));
 
@@ -745,6 +770,9 @@ class DatabaseService {
             profileStatus: r.profile_status,
             avatar: r.avatar,
             status: r.status,
+            approvalStatus: r.approval_status || (r.role === 'admin' ? 'approved' : 'approved'),
+            approvalDate: r.approval_date,
+            rejectionReason: r.rejection_reason,
             createdAt: r.created_at,
           };
         }
@@ -752,7 +780,11 @@ class DatabaseService {
         console.error('[DB] getUserById SQL error:', err);
       }
     }
-    return this.usersCache.find((u) => u.id === id);
+    const cached = this.usersCache.find((u) => u.id === id);
+    if (cached && !cached.approvalStatus) {
+      cached.approvalStatus = cached.role === 'admin' ? 'approved' : 'approved';
+    }
+    return cached;
   }
 
   public async getUserByEmail(email: string): Promise<StoredUser | undefined> {
@@ -784,6 +816,9 @@ class DatabaseService {
             profileStatus: r.profile_status,
             avatar: r.avatar,
             status: r.status,
+            approvalStatus: r.approval_status || (r.role === 'admin' ? 'approved' : 'approved'),
+            approvalDate: r.approval_date,
+            rejectionReason: r.rejection_reason,
             createdAt: r.created_at,
           };
         }
@@ -791,7 +826,11 @@ class DatabaseService {
         console.error('[DB] getUserByEmail SQL error:', err);
       }
     }
-    return this.usersCache.find((u) => u.email.trim().toLowerCase() === norm);
+    const cached = this.usersCache.find((u) => u.email.trim().toLowerCase() === norm);
+    if (cached && !cached.approvalStatus) {
+      cached.approvalStatus = cached.role === 'admin' ? 'approved' : 'approved';
+    }
+    return cached;
   }
 
   public async createUser(userData: StoredUser): Promise<StoredUser> {
@@ -813,9 +852,12 @@ class DatabaseService {
       password: securePassword,
       role: userData.role || 'contributor',
       status: userData.status || 'active',
-      isEmailVerified: userData.isEmailVerified ?? false,
-      emailVerified: userData.emailVerified ?? userData.isEmailVerified ?? false,
-      profileStatus: userData.profileStatus || 'Complete',
+      approvalStatus: userData.approvalStatus || (userData.role === 'admin' ? 'approved' : 'pending'),
+      approvalDate: userData.approvalDate,
+      rejectionReason: userData.rejectionReason,
+      isEmailVerified: userData.isEmailVerified ?? true,
+      emailVerified: userData.emailVerified ?? userData.isEmailVerified ?? true,
+      profileStatus: userData.profileStatus || 'Incomplete',
       createdAt: userData.createdAt || new Date().toISOString().split('T')[0],
       languages: userData.languages || ['English'],
       languageProficiency: userData.languageProficiency || { English: 'Fluent' },
@@ -829,13 +871,14 @@ class DatabaseService {
             id, first_name, last_name, email, password, phone, country,
             languages, language_proficiency, skills, experience, cv_link,
             resume_text, role, is_email_verified, profile_status, avatar,
-            status, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            status, approval_status, approval_date, rejection_reason, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
           ON CONFLICT (id) DO UPDATE SET
             first_name = EXCLUDED.first_name,
             last_name = EXCLUDED.last_name,
             phone = EXCLUDED.phone,
-            country = EXCLUDED.country`,
+            country = EXCLUDED.country,
+            approval_status = EXCLUDED.approval_status`,
           [
             newUser.id,
             newUser.firstName,
@@ -855,6 +898,9 @@ class DatabaseService {
             newUser.profileStatus,
             newUser.avatar,
             newUser.status,
+            newUser.approvalStatus,
+            newUser.approvalDate || null,
+            newUser.rejectionReason || null,
             newUser.createdAt,
           ]
         );
@@ -888,6 +934,9 @@ class DatabaseService {
         role: existing.role === 'admin' || userData.role === 'admin' ? (norm === CANONICAL_ADMIN_EMAIL.toLowerCase() ? 'admin' : 'contributor') : (userData.role || existing.role || 'contributor'),
         isEmailVerified: userData.isEmailVerified !== undefined ? userData.isEmailVerified : existing.isEmailVerified,
         status: userData.status || existing.status || 'active',
+        approvalStatus: userData.approvalStatus || existing.approvalStatus || (existing.role === 'admin' ? 'approved' : 'approved'),
+        approvalDate: userData.approvalDate || existing.approvalDate,
+        rejectionReason: userData.rejectionReason !== undefined ? userData.rejectionReason : existing.rejectionReason,
       };
       const idx = this.usersCache.findIndex((u) => u.id === updated.id || u.email.toLowerCase() === norm);
       if (idx >= 0) {
@@ -916,7 +965,8 @@ class DatabaseService {
       resumeUrl: userData.resumeUrl,
       resumeText: userData.resumeText,
       role: userData.role || 'contributor',
-      isEmailVerified: userData.isEmailVerified ?? false,
+      isEmailVerified: userData.isEmailVerified ?? true,
+      approvalStatus: userData.approvalStatus || 'pending',
       profileStatus: userData.profileStatus || 'Incomplete',
       avatar: userData.avatar || (userData.firstName ? userData.firstName[0].toUpperCase() : 'U'),
       status: userData.status || 'active',
@@ -946,8 +996,9 @@ class DatabaseService {
             first_name = $1, last_name = $2, phone = $3, country = $4,
             languages = $5, language_proficiency = $6, skills = $7,
             experience = $8, cv_link = $9, status = $10, is_email_verified = $11,
-            password = COALESCE($12, password)
-           WHERE id = $13`,
+            approval_status = $12, approval_date = $13, rejection_reason = $14,
+            password = COALESCE($15, password)
+           WHERE id = $16`,
           [
             updatedUser.firstName,
             updatedUser.lastName,
@@ -960,6 +1011,9 @@ class DatabaseService {
             updatedUser.cvLink || '',
             updatedUser.status,
             updatedUser.isEmailVerified,
+            updatedUser.approvalStatus || 'approved',
+            updatedUser.approvalDate || null,
+            updatedUser.rejectionReason || null,
             updatedPassword,
             id,
           ]
@@ -975,6 +1029,33 @@ class DatabaseService {
     }
     this.saveAll();
     return updatedUser;
+  }
+
+  public async approveUser(id: string): Promise<StoredUser | undefined> {
+    return this.updateUser(id, {
+      approvalStatus: 'approved',
+      approvalDate: new Date().toISOString(),
+      rejectionReason: undefined,
+    });
+  }
+
+  public async rejectUser(id: string, reason?: string): Promise<StoredUser | undefined> {
+    return this.updateUser(id, {
+      approvalStatus: 'rejected',
+      rejectionReason: reason || 'Account registration rejected by administrator',
+    });
+  }
+
+  public async setApprovalStatus(
+    id: string,
+    status: 'pending' | 'approved' | 'rejected',
+    reason?: string
+  ): Promise<StoredUser | undefined> {
+    return this.updateUser(id, {
+      approvalStatus: status,
+      approvalDate: status === 'approved' ? new Date().toISOString() : undefined,
+      rejectionReason: status === 'rejected' ? (reason || 'Registration rejected by admin') : undefined,
+    });
   }
 
   public async deleteUser(id: string): Promise<boolean> {

@@ -151,17 +151,29 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
     });
   }
 
-  // Rule 8: Only verified users can log in and access the Contributor Dashboard.
-  // Rule 9: If an unverified user tries to log in, block dashboard access and show:
-  // "Please verify your email address before continuing."
-  const isVerified = (user.emailVerified ?? user.isEmailVerified) === true;
-  if (user.role !== 'admin' && !isVerified) {
-    return res.status(403).json({
-      success: false,
-      code: 'EMAIL_NOT_VERIFIED',
-      email: user.email,
-      message: 'Please verify your email address before continuing.',
-    });
+  // Admin User Approval System:
+  // 1. Administrators are always approved.
+  // 2. Existing users (where approvalStatus is undefined or 'approved') are approved and never blocked.
+  // 3. Newly registered users who are pending approval cannot access until approved by Admin.
+  // 4. Rejected users cannot log in.
+  if (user.role !== 'admin') {
+    const approval = user.approvalStatus || 'approved';
+    if (approval === 'pending') {
+      return res.status(403).json({
+        success: false,
+        code: 'PENDING_APPROVAL',
+        email: user.email,
+        message: 'Your account is pending admin approval.',
+      });
+    }
+    if (approval === 'rejected') {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_REJECTED',
+        email: user.email,
+        message: user.rejectionReason || 'Your account registration has been rejected by an administrator.',
+      });
+    }
   }
 
   const { password: _, ...safeUser } = user;
@@ -237,38 +249,19 @@ apiRouter.post('/auth/resend-verification', async (req: Request, res: Response) 
       });
     }
 
-    const host = req.get('x-forwarded-host') || req.get('host');
-    const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
-
-    const emailResult = await sendVerificationEmail({
-      toEmail: norm,
-      recipientName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Contributor',
-      verificationToken: tokenData.token,
-      expiresAt: tokenData.expiresAt,
-      reqHost: host,
-      reqProtocol: proto,
-    });
-
+    // Verification emails are sent directly through Firebase Authentication's built-in system.
     return res.json({
       success: true,
       email: norm,
       expiresAt: tokenData.expiresAt,
-      emailSent: emailResult.success,
-      emailProvider: emailResult.provider,
-      emailError: emailResult.error,
       verificationToken: tokenData.token,
-      verificationUrl: emailResult.verificationUrl,
-      message: emailResult.success
-        ? `A new verification email has been sent to your inbox (${norm}). Please click the link to activate your account.`
-        : (emailResult.error
-            ? `Verification email could not be delivered (${emailResult.error}). Please check your SMTP settings in Settings panel or use direct activation below.`
-            : `We've sent a verification email to your registered email. Please verify your email to activate your account.`),
+      message: `Verification requests are processed through Firebase Authentication.`,
     });
   } catch (err: any) {
     console.error('Resend verification error:', err);
     return res.status(500).json({
       success: false,
-      message: 'Failed to resend verification email.',
+      message: 'Failed to process verification request.',
     });
   }
 });
@@ -339,49 +332,37 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
       experience: experience || 'Independent Contributor & Linguist',
       cvLink: cvLink ? String(cvLink).trim() : undefined,
       role: 'contributor',
-      isEmailVerified: false,
-      emailVerified: false,
+      approvalStatus: 'pending',
+      isEmailVerified: true,
+      emailVerified: true,
       profileStatus: 'Incomplete',
       avatar: (String(firstName)[0] || 'U').toUpperCase() + (String(lastName)[0] || 'C').toUpperCase(),
       status: 'active',
       createdAt: new Date().toISOString().split('T')[0],
-      verificationToken,
-      verificationTokenExpiresAt,
-      requiresEmailVerification: true,
+      requiresEmailVerification: false,
     };
 
     await db.createUser(newUser);
 
-    const host = req.get('x-forwarded-host') || req.get('host');
-    const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
-
-    // Dispatch real email verification to user's inbox
-    const emailResult = await sendVerificationEmail({
-      toEmail: normalizedEmail,
-      recipientName: `${firstName} ${lastName}`.trim(),
-      verificationToken,
-      expiresAt: verificationTokenExpiresAt,
-      reqHost: host,
-      reqProtocol: proto,
-    });
-
-    // Rule 3: DO NOT automatically log the user into the dashboard after registration.
-    // Return requiresVerification with token details for countdown UI, but NO user session.
+    // Rule: DO NOT automatically log the user into the dashboard after registration.
+    // Account remains Pending Approval until an Admin approves it.
     return res.json({
       success: true,
-      requiresVerification: true,
+      pendingApproval: true,
       email: normalizedEmail,
-      expiresAt: verificationTokenExpiresAt,
-      emailSent: emailResult.success,
-      emailProvider: emailResult.provider,
-      emailError: emailResult.error,
-      verificationToken,
-      verificationUrl: emailResult.verificationUrl,
-      message: emailResult.success
-        ? `We've sent a verification email to your registered email (${normalizedEmail}). Please check your inbox and click the verification link to activate your account.`
-        : (emailResult.error
-            ? `Account created! Verification email could not be sent (${emailResult.error}). Please configure your Gmail App Password in Settings or use direct activation below.`
-            : `We've sent a verification email to your registered email. Please verify your email to activate your account.`),
+      user: {
+        id: newUser.id,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        email: newUser.email,
+        role: newUser.role,
+        approvalStatus: 'pending',
+        isEmailVerified: true,
+        emailVerified: true,
+        profileStatus: newUser.profileStatus,
+        status: newUser.status,
+      },
+      message: 'Account registered successfully. Your account is pending admin approval.',
     });
   } catch (err: any) {
     console.error('Registration error:', err);
@@ -495,6 +476,59 @@ apiRouter.patch('/users/:id/status', async (req: Request, res: Response) => {
     const updated = await db.updateUser(id, { status: nextStatus });
     const { password: _, ...safeUser } = updated!;
     res.json({ success: true, user: safeUser });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/users/:id/approve - Approve user registration
+apiRouter.patch('/users/:id/approve', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = await db.getUserById(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+    const updated = await db.approveUser(id);
+    const { password: _, ...safeUser } = updated!;
+    res.json({ success: true, message: 'User approved successfully.', user: safeUser });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/users/:id/reject - Reject user registration
+apiRouter.patch('/users/:id/reject', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    const user = await db.getUserById(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+    const updated = await db.rejectUser(id, reason);
+    const { password: _, ...safeUser } = updated!;
+    res.json({ success: true, message: 'User registration rejected.', user: safeUser });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/users/:id/approval-status - Update user approval status
+apiRouter.patch('/users/:id/approval-status', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, reason } = req.body || {};
+    if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid approval status.' });
+    }
+    const user = await db.getUserById(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+    const updated = await db.setApprovalStatus(id, status, reason);
+    const { password: _, ...safeUser } = updated!;
+    res.json({ success: true, message: `User status set to ${status}.`, user: safeUser });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

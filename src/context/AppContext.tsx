@@ -37,6 +37,11 @@ import {
   fetchMaintenanceFromFirestore,
   subscribeToMaintenanceFirestore,
   isQuotaExhausted,
+  auth,
+  firebaseSignUpAndSendVerification,
+  firebaseResendVerificationEmail,
+  firebaseVerifyEmailWithActionCode,
+  firebaseCheckEmailVerified,
 } from '../lib/firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -58,6 +63,8 @@ interface AppContextType {
   }) => Promise<{
     success: boolean;
     message: string;
+    pendingApproval?: boolean;
+    approvalStatus?: 'pending' | 'approved' | 'rejected';
     requiresVerification?: boolean;
     verificationToken?: string;
     expiresAt?: number;
@@ -80,6 +87,13 @@ interface AppContextType {
     email?: string;
     user?: UserProfile;
   }>;
+  verifyFirebaseEmail: (oobCode: string) => Promise<{
+    success: boolean;
+    message: string;
+    email?: string;
+    code?: string;
+  }>;
+  checkFirebaseVerificationStatus: () => Promise<boolean>;
   verifyEmail: () => void;
   logout: () => void;
   updateProfile: (profile: Partial<UserProfile>) => void;
@@ -88,6 +102,9 @@ interface AppContextType {
   users: UserProfile[];
   toggleUserStatus: (id: string) => void;
   toggleEmailVerification: (id: string) => void;
+  approveUser: (id: string) => Promise<boolean>;
+  rejectUser: (id: string, reason?: string) => Promise<boolean>;
+  setUserApprovalStatus: (id: string, status: 'pending' | 'approved' | 'rejected', reason?: string) => Promise<boolean>;
   deleteUser: (id: string) => void;
   purgeTempUsers: () => void;
 
@@ -305,10 +322,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ) {
       return null;
     }
-    // Block unverified non-admin users from being loaded into session
+    // Block unapproved non-admin users from being loaded into active session
     if (stored && stored.role !== 'admin') {
-      const isVerified = (stored.emailVerified ?? stored.isEmailVerified) === true;
-      if (!isVerified) {
+      const approval = stored.approvalStatus || 'approved';
+      if (approval === 'pending' || approval === 'rejected') {
         return null;
       }
     }
@@ -741,14 +758,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const data = await res.json();
 
         if (res.ok && data.success && data.user) {
-          const isUserVerified = (data.user.emailVerified ?? data.user.isEmailVerified) === true;
-          if (data.user.role !== 'admin' && !isUserVerified) {
-            return {
-              success: false,
-              code: 'EMAIL_NOT_VERIFIED',
-              userEmail: data.user.email || normEmail,
-              message: 'Please verify your email address before continuing.',
-            };
+          // Admin User Approval Gate:
+          // Admin is always approved. Existing users default to 'approved'.
+          // Unapproved users cannot log in.
+          if (data.user.role !== 'admin') {
+            const approval = data.user.approvalStatus || 'approved';
+            if (approval === 'pending') {
+              return {
+                success: false,
+                code: 'PENDING_APPROVAL',
+                userEmail: data.user.email || normEmail,
+                message: 'Your account is pending admin approval.',
+              };
+            }
+            if (approval === 'rejected') {
+              return {
+                success: false,
+                code: 'ACCOUNT_REJECTED',
+                userEmail: data.user.email || normEmail,
+                message: data.user.rejectionReason || 'Your account registration has been rejected by an administrator.',
+              };
+            }
           }
           saveLocalPassword(normEmail, cleanPassword);
           setCurrentUserState(data.user);
@@ -759,6 +789,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return prev.map((u) => (u.email.toLowerCase() === normEmail ? data.user : u));
           });
           return { success: true };
+        }
+
+        if (data && data.code === 'PENDING_APPROVAL') {
+          return {
+            success: false,
+            code: 'PENDING_APPROVAL',
+            userEmail: data.email || normEmail,
+            message: data.message || 'Your account is pending admin approval.',
+          };
+        }
+
+        if (data && data.code === 'ACCOUNT_REJECTED') {
+          return {
+            success: false,
+            code: 'ACCOUNT_REJECTED',
+            userEmail: data.email || normEmail,
+            message: data.message || 'Your account registration has been rejected by an administrator.',
+          };
         }
 
         if (data && data.code === 'EMAIL_NOT_VERIFIED') {
@@ -777,14 +825,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (localUser.status === 'suspended') {
             return { success: false, message: 'Your account has been suspended. Please contact platform support.' };
           }
-          const isUserVerified = (localUser.emailVerified ?? localUser.isEmailVerified) === true;
-          if (localUser.role !== 'admin' && !isUserVerified) {
-            return {
-              success: false,
-              code: 'EMAIL_NOT_VERIFIED',
-              userEmail: localUser.email,
-              message: 'Please verify your email address before continuing.',
-            };
+          if (localUser.role !== 'admin') {
+            const approval = localUser.approvalStatus || 'approved';
+            if (approval === 'pending') {
+              return {
+                success: false,
+                code: 'PENDING_APPROVAL',
+                userEmail: localUser.email,
+                message: 'Your account is pending admin approval.',
+              };
+            }
+            if (approval === 'rejected') {
+              return {
+                success: false,
+                code: 'ACCOUNT_REJECTED',
+                userEmail: localUser.email,
+                message: localUser.rejectionReason || 'Your account registration has been rejected by an administrator.',
+              };
+            }
           }
           setCurrentUserState(localUser);
           saveStorage('currentUser', localUser);
@@ -796,21 +854,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      // Check local user cache if response was non-JSON
       const localUser = users.find((u) => u.email.toLowerCase() === normEmail);
       const storedPass = getLocalPassword(normEmail);
       if (localUser && storedPass && storedPass === cleanPassword) {
         if (localUser.status === 'suspended') {
           return { success: false, message: 'Your account has been suspended. Please contact platform support.' };
         }
-        const isUserVerified = (localUser.emailVerified ?? localUser.isEmailVerified) === true;
-        if (localUser.role !== 'admin' && !isUserVerified) {
-          return {
-            success: false,
-            code: 'EMAIL_NOT_VERIFIED',
-            userEmail: localUser.email,
-            message: 'Please verify your email address before continuing.',
-          };
+        if (localUser.role !== 'admin') {
+          const approval = localUser.approvalStatus || 'approved';
+          if (approval === 'pending') {
+            return {
+              success: false,
+              code: 'PENDING_APPROVAL',
+              userEmail: localUser.email,
+              message: 'Your account is pending admin approval.',
+            };
+          }
+          if (approval === 'rejected') {
+            return {
+              success: false,
+              code: 'ACCOUNT_REJECTED',
+              userEmail: localUser.email,
+              message: localUser.rejectionReason || 'Your account registration has been rejected by an administrator.',
+            };
+          }
         }
         setCurrentUserState(localUser);
         saveStorage('currentUser', localUser);
@@ -829,14 +896,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (found.status === 'suspended') {
           return { success: false, message: 'Your account has been suspended. Please contact platform support.' };
         }
-        const isUserVerified = (found.emailVerified ?? found.isEmailVerified) === true;
-        if (found.role !== 'admin' && !isUserVerified) {
-          return {
-            success: false,
-            code: 'EMAIL_NOT_VERIFIED',
-            userEmail: found.email,
-            message: 'Please verify your email address before continuing.',
-          };
+        if (found.role !== 'admin') {
+          const approval = found.approvalStatus || 'approved';
+          if (approval === 'pending') {
+            return {
+              success: false,
+              code: 'PENDING_APPROVAL',
+              userEmail: found.email,
+              message: 'Your account is pending admin approval.',
+            };
+          }
+          if (approval === 'rejected') {
+            return {
+              success: false,
+              code: 'ACCOUNT_REJECTED',
+              userEmail: found.email,
+              message: found.rejectionReason || 'Your account registration has been rejected by an administrator.',
+            };
+          }
         }
         const storedPass = getLocalPassword(normEmail);
         if (storedPass && (storedPass === password || storedPass === cleanPassword)) {
@@ -865,6 +942,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }): Promise<{
     success: boolean;
     message: string;
+    pendingApproval?: boolean;
+    approvalStatus?: 'pending' | 'approved' | 'rejected';
     requiresVerification?: boolean;
     verificationToken?: string;
     expiresAt?: number;
@@ -882,11 +961,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Please fill out all required fields.' };
     }
 
+    // Step 2 & 3: Firebase creates the account and sends the verification email immediately
+    let fbUser: any = null;
+    let fbEmailSent = false;
+    let fbEmailError: string | undefined;
+
+    try {
+      const fbResult = await firebaseSignUpAndSendVerification(normEmail, data.password);
+      if (fbResult.success) {
+        fbUser = fbResult.user;
+        fbEmailSent = fbResult.emailSent;
+        fbEmailError = fbResult.error;
+      } else {
+        if (fbResult.code === 'auth/email-already-in-use') {
+          return {
+            success: false,
+            message: 'An account with this email address already exists. Please log in.',
+          };
+        }
+        if (fbResult.code === 'auth/weak-password') {
+          return {
+            success: false,
+            message: 'Password is too weak. Please use at least 6 characters.',
+          };
+        }
+        if (fbResult.code === 'auth/invalid-email') {
+          return {
+            success: false,
+            message: 'Please provide a valid email address.',
+          };
+        }
+        if (fbResult.code === 'auth/operation-not-allowed') {
+          fbEmailError =
+            'Firebase Email/Password provider must be enabled in the Firebase Console (Authentication > Sign-in method) to dispatch live verification emails.';
+        } else {
+          fbEmailError = fbResult.error;
+        }
+      }
+    } catch (fbErr: any) {
+      console.warn('[Firebase Auth] Registration notice:', fbErr);
+      fbEmailError = fbErr?.message;
+    }
+
     const localToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
     const localExpiresAt = Date.now() + 5 * 60 * 1000;
 
     const buildLocalUser = (id?: string): UserProfile => ({
-      id: id || `usr-${Date.now().toString().slice(-5)}`,
+      id: id || fbUser?.uid || `usr-${Date.now().toString().slice(-5)}`,
       firstName: cleanFirstName,
       lastName: cleanLastName,
       email: normEmail,
@@ -909,10 +1030,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       requiresEmailVerification: true,
     });
 
+    saveLocalPassword(normEmail, data.password);
+
+    // Sync user to backend storage without sending backend emails
+    let backendUser: any = null;
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
       const res = await fetch(`${API_BASE}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -933,96 +1057,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const contentType = res.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
         const result = await res.json();
-
         if (res.ok && result.success) {
-          saveLocalPassword(normEmail, data.password);
-          const vToken = result.verificationToken || localToken;
-          const vExpires = result.expiresAt || localExpiresAt;
-
-          const registeredUser: UserProfile = {
-            ...(result.user || buildLocalUser(result.user?.id)),
-            verificationToken: vToken,
-            verificationTokenExpiresAt: vExpires,
-            requiresEmailVerification: true,
-            isEmailVerified: false,
-            emailVerified: false,
-          };
-
-          setUsers((prev) => {
-            const exists = prev.some((u) => u.email.toLowerCase() === normEmail);
-            const next = exists
-              ? prev.map((u) => (u.email.toLowerCase() === normEmail ? registeredUser : u))
-              : [...prev, registeredUser];
-            saveStorage('users', next);
-            return next;
-          });
-
-          // Persist unverified user state to Firebase Firestore
-          saveUserToFirestore(registeredUser).catch((e) => console.warn('Firestore user save notice:', e));
-
-          // Rule 3: DO NOT automatically log the user into the dashboard after registration.
-          return {
-            success: true,
-            requiresVerification: true,
-            email: normEmail,
-            verificationToken: result.verificationToken || vToken,
-            expiresAt: vExpires,
-            emailSent: result.emailSent,
-            emailError: result.emailError,
-            message: result.message || "We've sent a verification email to your registered email. Please verify your email to activate your account.",
-          };
-        }
-
-        // Specific message from backend (e.g. account already exists, reserved email)
-        if (result.message && !res.ok) {
-          return {
-            success: false,
-            message: result.message,
-          };
+          backendUser = result.user;
+        } else if (result.message && !res.ok) {
+          if (!fbUser) {
+            return { success: false, message: result.message };
+          }
         }
       }
-
-      throw new Error('Non-JSON response from server');
-    } catch (err) {
-      console.warn('Registration network fallback engaged:', err);
-
-      const existingUser = users.find((u) => u.email.toLowerCase() === normEmail);
-      if (existingUser) {
-        return {
-          success: false,
-          message: 'An account with this email address already exists. Please log in.',
-        };
-      }
-
-      const localUser: UserProfile = {
-        ...buildLocalUser(),
-        isEmailVerified: false,
-        emailVerified: false,
-        requiresEmailVerification: true,
-        verificationToken: localToken,
-        verificationTokenExpiresAt: localExpiresAt,
-      };
-      saveLocalPassword(normEmail, data.password);
-      setUsers((prev) => {
-        const next = [...prev.filter((u) => u.email.toLowerCase() !== normEmail), localUser];
-        saveStorage('users', next);
-        return next;
-      });
-
-      // Persist to Firebase Firestore
-      saveUserToFirestore(localUser).catch((e) => console.warn('Firestore fallback user save notice:', e));
-
-      return {
-        success: true,
-        requiresVerification: true,
-        email: normEmail,
-        verificationToken: localToken,
-        expiresAt: localExpiresAt,
-        emailSent: false,
-        emailError: 'Email service could not deliver verification email automatically. Please use the Instant Verify button below.',
-        message: "Account created! Email could not be delivered automatically. Please use the Instant Activate button below.",
-      };
+    } catch (backendErr) {
+      console.warn('Backend user registration sync notice:', backendErr);
     }
+
+    const registeredUser: UserProfile = {
+      ...(backendUser || buildLocalUser(fbUser?.uid)),
+      approvalStatus: 'pending',
+      isEmailVerified: true,
+      emailVerified: true,
+      requiresEmailVerification: false,
+      verificationToken: localToken,
+      verificationTokenExpiresAt: localExpiresAt,
+    };
+
+    setUsers((prev) => {
+      const exists = prev.some((u) => u.email.toLowerCase() === normEmail);
+      const next = exists
+        ? prev.map((u) => (u.email.toLowerCase() === normEmail ? registeredUser : u))
+        : [...prev, registeredUser];
+      saveStorage('users', next);
+      return next;
+    });
+
+    // Persist pending approval user state to Firebase Firestore
+    saveUserToFirestore(registeredUser).catch((e) => console.warn('Firestore user save notice:', e));
+
+    return {
+      success: true,
+      pendingApproval: true,
+      requiresVerification: false,
+      email: normEmail,
+      message: 'Your account is pending admin approval.',
+    };
   };
 
   const resendVerificationEmail = async (
@@ -1036,63 +1111,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     emailError?: string;
   }> => {
     const norm = emailToResend.trim().toLowerCase();
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/resend-verification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: norm }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        const newExpiry = data.expiresAt || Date.now() + 5 * 60 * 1000;
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.email.toLowerCase() === norm
-              ? {
-                  ...u,
-                  verificationToken: data.verificationToken,
-                  verificationTokenExpiresAt: newExpiry,
-                  requiresEmailVerification: true,
-                  isEmailVerified: false,
-                }
-              : u
-          )
-        );
-        return {
-          success: true,
-          message: data.message || "We've sent a verification email to your registered email. Please verify your email to activate your account.",
-          verificationToken: data.verificationToken,
-          expiresAt: newExpiry,
-          emailSent: data.emailSent,
-          emailError: data.emailError,
-        };
-      }
-      return { success: false, message: data.message || 'Failed to resend verification email.' };
-    } catch (e) {
-      const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
-      const expiresAt = Date.now() + 5 * 60 * 1000;
+    const storedPass = getLocalPassword(norm);
+
+    // Call Firebase Authentication directly to send verification email
+    const fbRes = await firebaseResendVerificationEmail(norm, storedPass || undefined);
+    const newExpiry = Date.now() + 5 * 60 * 1000;
+    const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.email.toLowerCase() === norm
+          ? {
+              ...u,
+              verificationToken: token,
+              verificationTokenExpiresAt: newExpiry,
+              requiresEmailVerification: true,
+              isEmailVerified: false,
+            }
+          : u
+      )
+    );
+
+    return {
+      success: fbRes.success,
+      message: fbRes.message || `A verification email has been sent by Firebase Authentication to ${norm}.`,
+      verificationToken: token,
+      expiresAt: newExpiry,
+      emailSent: fbRes.emailSent,
+      emailError: fbRes.emailSent === false ? fbRes.message : undefined,
+    };
+  };
+
+  const verifyFirebaseEmail = async (
+    oobCode: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    email?: string;
+    code?: string;
+  }> => {
+    const res = await firebaseVerifyEmailWithActionCode(oobCode);
+    if (res.success) {
+      const verifiedEmail = (res.email || auth.currentUser?.email || '').toLowerCase();
       setUsers((prev) =>
-        prev.map((u) =>
-          u.email.toLowerCase() === norm
-            ? {
-                ...u,
-                verificationToken: token,
-                verificationTokenExpiresAt: expiresAt,
-                requiresEmailVerification: true,
-                isEmailVerified: false,
-              }
-            : u
-        )
+        prev.map((u) => {
+          if (!verifiedEmail || u.email.toLowerCase() === verifiedEmail) {
+            const updated: UserProfile = {
+              ...u,
+              isEmailVerified: true,
+              emailVerified: true,
+              profileStatus: 'Complete',
+              requiresEmailVerification: false,
+              verificationToken: undefined,
+              verificationTokenExpiresAt: undefined,
+            };
+            saveUserToFirestore(updated).catch(() => {});
+            return updated;
+          }
+          return u;
+        })
       );
-      return {
-        success: true,
-        message: "New verification link generated! Note: Delivery failed. Please use the Instant Verify button below.",
-        verificationToken: token,
-        expiresAt,
-        emailSent: false,
-        emailError: 'Email service could not dispatch verification email automatically. Please use the Instant Verify button below.',
-      };
     }
+    return res;
+  };
+
+  const checkFirebaseVerificationStatus = async (): Promise<boolean> => {
+    const isVerified = await firebaseCheckEmailVerified();
+    if (isVerified && auth.currentUser?.email) {
+      const verifiedEmail = auth.currentUser.email.toLowerCase();
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.email.toLowerCase() === verifiedEmail) {
+            const updated: UserProfile = {
+              ...u,
+              isEmailVerified: true,
+              emailVerified: true,
+              profileStatus: 'Complete',
+              requiresEmailVerification: false,
+              verificationToken: undefined,
+              verificationTokenExpiresAt: undefined,
+            };
+            saveUserToFirestore(updated).catch(() => {});
+            return updated;
+          }
+          return u;
+        })
+      );
+    }
+    return isVerified;
   };
 
   const verifyEmailByToken = async (
@@ -1107,6 +1213,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanToken = token.trim();
     if (!cleanToken) {
       return { success: false, code: 'INVALID_TOKEN', message: 'Verification token is required.' };
+    }
+
+    // 1. Attempt native Firebase Authentication action code verification (e.g. oobCode)
+    try {
+      const fbActionRes = await firebaseVerifyEmailWithActionCode(cleanToken);
+      if (fbActionRes.success) {
+        const verifiedEmail = (fbActionRes.email || auth.currentUser?.email || '').toLowerCase();
+        let matchedUser: UserProfile | undefined;
+
+        setUsers((prev) =>
+          prev.map((u) => {
+            if (!verifiedEmail || u.email.toLowerCase() === verifiedEmail) {
+              const updated: UserProfile = {
+                ...u,
+                isEmailVerified: true,
+                emailVerified: true,
+                profileStatus: 'Complete',
+                requiresEmailVerification: false,
+                verificationToken: undefined,
+                verificationTokenExpiresAt: undefined,
+              };
+              matchedUser = updated;
+              saveUserToFirestore(updated).catch(() => {});
+              return updated;
+            }
+            return u;
+          })
+        );
+
+        return {
+          success: true,
+          message: fbActionRes.message || 'Your email has been successfully verified through Firebase Authentication!',
+          email: verifiedEmail,
+          user: matchedUser,
+        };
+      }
+    } catch (fbActionErr) {
+      console.warn('[Firebase Auth] Action code check notice:', fbActionErr);
     }
 
     try {
@@ -1264,6 +1408,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return next;
     });
     fetch(`${API_BASE}/api/users/${id}/verify-email`, { method: 'PATCH' }).catch(() => {});
+  };
+
+  const approveUser = async (id: string): Promise<boolean> => {
+    try {
+      fetch(`${API_BASE}/api/users/${id}/approve`, { method: 'PATCH' }).catch(() => {});
+    } catch (e) {
+      console.warn('Approve user notice:', e);
+    }
+    const approvalDate = new Date().toISOString();
+    setUsers((prev) => {
+      const next = prev.map((u) => {
+        if (u.id === id) {
+          const updated: UserProfile = {
+            ...u,
+            approvalStatus: 'approved',
+            approvalDate,
+            rejectionReason: undefined,
+          };
+          saveUserToFirestore(updated).catch(() => {});
+          return updated;
+        }
+        return u;
+      });
+      saveStorage('users', next);
+      return next;
+    });
+    return true;
+  };
+
+  const rejectUser = async (id: string, reason?: string): Promise<boolean> => {
+    try {
+      fetch(`${API_BASE}/api/users/${id}/reject`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      }).catch(() => {});
+    } catch (e) {
+      console.warn('Reject user notice:', e);
+    }
+    setUsers((prev) => {
+      const next = prev.map((u) => {
+        if (u.id === id) {
+          const updated: UserProfile = {
+            ...u,
+            approvalStatus: 'rejected',
+            rejectionReason: reason || 'Registration rejected by administrator',
+          };
+          saveUserToFirestore(updated).catch(() => {});
+          return updated;
+        }
+        return u;
+      });
+      saveStorage('users', next);
+      return next;
+    });
+    return true;
+  };
+
+  const setUserApprovalStatus = async (
+    id: string,
+    status: 'pending' | 'approved' | 'rejected',
+    reason?: string
+  ): Promise<boolean> => {
+    if (status === 'approved') return approveUser(id);
+    if (status === 'rejected') return rejectUser(id, reason);
+    try {
+      fetch(`${API_BASE}/api/users/${id}/approval-status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, reason }),
+      }).catch(() => {});
+    } catch (e) {}
+    setUsers((prev) => {
+      const next = prev.map((u) => {
+        if (u.id === id) {
+          const updated: UserProfile = {
+            ...u,
+            approvalStatus: status,
+            rejectionReason: (status as string) === 'rejected' ? reason : undefined,
+          };
+          saveUserToFirestore(updated).catch(() => {});
+          return updated;
+        }
+        return u;
+      });
+      saveStorage('users', next);
+      return next;
+    });
+    return true;
   };
 
   const deleteUser = (id: string) => {
@@ -2078,6 +2311,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         register,
         resendVerificationEmail,
         verifyEmailByToken,
+        verifyFirebaseEmail,
+        checkFirebaseVerificationStatus,
         verifyEmail,
         logout,
         updateProfile,
@@ -2085,6 +2320,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         users,
         toggleUserStatus,
         toggleEmailVerification,
+        approveUser,
+        rejectUser,
+        setUserApprovalStatus,
         deleteUser,
         purgeTempUsers,
 

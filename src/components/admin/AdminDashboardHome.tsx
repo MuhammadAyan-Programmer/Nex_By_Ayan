@@ -53,6 +53,10 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
   const approvedContributors = applications.filter((a) => a.status === 'Approved').length;
   const rejectedApplications = applications.filter((a) => a.status === 'Rejected').length;
 
+  const pendingApprovalsCount = users.filter(
+    (u) => u.role !== 'admin' && u.approvalStatus === 'pending'
+  ).length;
+
   const pendingWithdrawalCount = withdrawals.filter(
     (w) => w.status === 'Withdrawal Requested'
   ).length;
@@ -152,6 +156,40 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
             className="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shrink-0 disabled:opacity-50"
           >
             {isSyncing ? 'Retrying...' : 'Retry Connection'}
+          </button>
+        </div>
+      )}
+
+      {/* Pending User Approvals Alert Banner */}
+      {pendingApprovalsCount > 0 && (
+        <div
+          id="admin-pending-approvals-alert"
+          className="p-4 bg-amber-500/10 border border-amber-300 rounded-2xl flex items-center justify-between gap-3 text-amber-900 text-sm shadow-xs"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="font-extrabold text-slate-900 text-sm">
+                  {pendingApprovalsCount} Registered User{pendingApprovalsCount > 1 ? 's' : ''} Awaiting Approval
+                </p>
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-200 text-amber-900 rounded-full">
+                  Action Required
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5">
+                New contributors cannot log in or access the dashboard until an administrator approves their account.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate('users')}
+            className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-colors shrink-0 shadow-xs cursor-pointer flex items-center gap-1.5"
+          >
+            Review Approvals →
           </button>
         </div>
       )}

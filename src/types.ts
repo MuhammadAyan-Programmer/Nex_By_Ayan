@@ -109,6 +109,9 @@ export interface UserProfile {
   profileStatus: 'Complete' | 'Incomplete';
   avatar?: string;
   status?: 'active' | 'suspended';
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
+  approvalDate?: string;
+  rejectionReason?: string;
   createdAt?: string;
   verificationToken?: string;
   verificationTokenExpiresAt?: number;

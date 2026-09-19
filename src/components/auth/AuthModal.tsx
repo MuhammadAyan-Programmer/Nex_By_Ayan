@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, CheckCircle2, Mail, Lock, ArrowRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { X, CheckCircle2, Mail, Lock, ArrowRight, Eye, EyeOff, ShieldCheck, Clock, AlertTriangle } from 'lucide-react';
 import { LogoIcon } from '../common/Logo';
 import { CountrySelect } from '../common/CountrySelect';
 
@@ -24,7 +24,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   initialMode = 'login',
   onOpenVerification,
 }) => {
-  const { login, register, resendVerificationEmail } = useApp();
+  const { login, register } = useApp();
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
 
   // Form states
@@ -37,15 +37,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [primaryLanguage, setPrimaryLanguage] = useState('English');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
-  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
+  const [regSuccessNotice, setRegSuccessNotice] = useState<{ email: string } | null>(null);
+  const [isPendingApprovalError, setIsPendingApprovalError] = useState(false);
+  const [isRejectedError, setIsRejectedError] = useState(false);
 
   if (!isOpen) return null;
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setPendingVerificationEmail(null);
+    setIsPendingApprovalError(false);
+    setIsRejectedError(false);
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
     if (!cleanEmail || !cleanPassword) {
@@ -60,12 +62,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (res.success) {
       onClose();
     } else {
-      if (res.code === 'EMAIL_NOT_VERIFIED') {
-        const unverified = res.userEmail || cleanEmail;
-        setPendingVerificationEmail(unverified);
-        setError('Please verify your email address before continuing.');
+      if (res.code === 'PENDING_APPROVAL') {
+        setIsPendingApprovalError(true);
+        setError('Your account is pending admin approval.');
+      } else if (res.code === 'ACCOUNT_REJECTED') {
+        setIsRejectedError(true);
+        setError(res.message || 'Your account registration has been rejected by an administrator.');
       } else {
-        setPendingVerificationEmail(null);
         setError(res.message || 'Invalid email or password.');
       }
     }
@@ -74,7 +77,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setPendingVerificationEmail(null);
+    setIsPendingApprovalError(false);
+    setIsRejectedError(false);
     const cleanEmail = email.trim().toLowerCase();
     if (!firstName || !lastName || !cleanEmail || !password) {
       setError('Please fill out all required fields.');
@@ -93,17 +97,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(false);
 
     if (res.success) {
-      onClose();
-      if (onOpenVerification) {
-        onOpenVerification({
-          email: res.email || cleanEmail,
-          token: res.verificationToken,
-          expiresAt: res.expiresAt,
-          initialState: 'created',
-          emailSent: res.emailSent,
-          emailError: res.emailError || (res.emailSent === false ? res.message : undefined),
-        });
-      }
+      // Admin Approval Flow: Account created in Pending Approval status
+      setRegSuccessNotice({ email: cleanEmail });
       return;
     } else {
       setError(res.message || 'Registration failed.');
@@ -133,41 +128,76 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </div>
 
-        {/* Success notification if registered */}
-        {regSuccessMessage ? (
-          <div className="p-8 text-center bg-white overflow-y-auto">
-            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-7 h-7" />
+        {/* Success notification if registered: Pending Admin Approval */}
+        {regSuccessNotice ? (
+          <div className="p-8 text-center bg-white overflow-y-auto space-y-4">
+            <div className="w-14 h-14 bg-amber-50 text-amber-600 border border-amber-200 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+              <Clock className="w-7 h-7" />
             </div>
-            <h4 className="text-lg font-bold text-slate-900 mb-1">Registration Successful</h4>
-            <p className="text-sm text-slate-600 mb-4">{regSuccessMessage}</p>
-            <p className="text-xs text-slate-500 font-medium">Opening your dashboard...</p>
+            <div>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 mb-2">
+                Pending Approval
+              </span>
+              <h4 className="text-xl font-extrabold text-slate-900">Registration Submitted</h4>
+            </div>
+            <p className="text-sm text-slate-600 leading-relaxed max-w-sm mx-auto">
+              Your account for <span className="font-semibold text-slate-800">{regSuccessNotice.email}</span> has been created and is waiting for administrator approval.
+            </p>
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 text-left space-y-1.5">
+              <p className="font-semibold text-slate-700">What happens next?</p>
+              <ul className="list-disc list-inside space-y-1 text-slate-600">
+                <li>An administrator will review your registered account in the Admin Panel.</li>
+                <li>Once approved, you will be able to log in normally with your email and password.</li>
+              </ul>
+            </div>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRegSuccessNotice(null);
+                  setEmail(regSuccessNotice.email);
+                  setPassword('');
+                  setMode('login');
+                }}
+                className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-sm transition-colors shadow-xs cursor-pointer"
+              >
+                Go to Sign In
+              </button>
+            </div>
           </div>
         ) : (
           <div className="p-6 bg-white overflow-y-auto">
             {error && (
-              <div className="mb-4 p-3 text-xs font-medium text-rose-800 bg-rose-50 border border-rose-200 rounded-lg flex items-start justify-between gap-2">
+              <div
+                className={`mb-4 p-3 text-xs font-medium rounded-lg flex items-start justify-between gap-2 ${
+                  isPendingApprovalError
+                    ? 'text-amber-800 bg-amber-50 border border-amber-300'
+                    : isRejectedError
+                    ? 'text-rose-800 bg-rose-50 border border-rose-300'
+                    : 'text-rose-800 bg-rose-50 border border-rose-200'
+                }`}
+              >
                 <div className="w-full">
-                  <p>{error}</p>
-                  {pendingVerificationEmail && (
-                    <div className="mt-2.5 pt-2 border-t border-rose-200/80 flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold text-rose-700">Account Activation Pending</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onClose();
-                          if (onOpenVerification) {
-                            onOpenVerification({
-                              email: pendingVerificationEmail,
-                              initialState: 'unverified_notice',
-                            });
-                          }
-                        }}
-                        className="text-xs font-bold text-indigo-700 hover:text-indigo-900 underline flex items-center gap-1"
-                      >
-                        Resend Verification Email →
-                      </button>
+                  {isPendingApprovalError ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-900 text-xs">
+                        <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Your account is pending admin approval.</span>
+                      </div>
+                      <p className="text-[11px] text-amber-700 leading-relaxed">
+                        An administrator must approve your registration before you can access the application. Please check back later or contact your administrator.
+                      </p>
                     </div>
+                  ) : isRejectedError ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-rose-900 text-xs">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Account Not Approved</span>
+                      </div>
+                      <p className="text-[11px] text-rose-700 leading-relaxed">{error}</p>
+                    </div>
+                  ) : (
+                    <p>{error}</p>
                   )}
                   {error.toLowerCase().includes('already exists') && (
                     <button
@@ -175,6 +205,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       onClick={() => {
                         setMode('login');
                         setError(null);
+                        setIsPendingApprovalError(false);
+                        setIsRejectedError(false);
                       }}
                       className="mt-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 underline block"
                     >
@@ -186,9 +218,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="button"
                   onClick={() => {
                     setError(null);
-                    setPendingVerificationEmail(null);
+                    setIsPendingApprovalError(false);
+                    setIsRejectedError(false);
                   }}
-                  className="text-rose-500 hover:text-rose-700 p-0.5 shrink-0"
+                  className="text-slate-400 hover:text-slate-700 p-0.5 shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>

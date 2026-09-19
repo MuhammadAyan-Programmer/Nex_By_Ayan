@@ -37,7 +37,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   setActiveTab,
   onOpenCreateProject,
 }) => {
-  const { currentUser, logout, applications, withdrawals, maintenanceState } = useApp();
+  const { currentUser, logout, applications, withdrawals, maintenanceState, users } = useApp();
+
+  const pendingApprovals = users.filter(
+    (u) => u.role !== 'admin' && u.approvalStatus === 'pending'
+  ).length;
 
   const pendingApps = applications.filter(
     (a) => a.status === 'Applied' || a.status === 'Under Review'
@@ -49,7 +53,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
 
   const navItems: { id: AdminTab; label: string; icon: React.ElementType; badge?: number; statusBadge?: string }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'users', label: 'Users', icon: Users },
+    {
+      id: 'users',
+      label: 'Registered Users / Approvals',
+      icon: Users,
+      badge: pendingApprovals > 0 ? pendingApprovals : undefined,
+    },
     { id: 'projects', label: 'Projects', icon: FolderKanban },
     {
       id: 'applications',

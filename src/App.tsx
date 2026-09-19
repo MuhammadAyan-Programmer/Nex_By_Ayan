@@ -62,7 +62,12 @@ const AppContent: React.FC = () => {
   React.useEffect(() => {
     try {
       const searchParams = new URLSearchParams(window.location.search);
-      const tokenFromQuery = searchParams.get('verifyToken') || searchParams.get('token') || searchParams.get('verify_token');
+      const oobCode = searchParams.get('oobCode');
+      const tokenFromQuery =
+        oobCode ||
+        searchParams.get('verifyToken') ||
+        searchParams.get('token') ||
+        searchParams.get('verify_token');
       const hash = window.location.hash;
       const tokenFromHash = hash.startsWith('#verify=') ? hash.replace('#verify=', '') : null;
       const token = tokenFromQuery || tokenFromHash;
@@ -356,46 +361,71 @@ const AppContent: React.FC = () => {
   }
 
   // 3. CONTRIBUTOR DASHBOARD VIEW
-  // Strict check: Only verified users can log in and access the Contributor Dashboard.
-  const isVerifiedContributor = (currentUser.emailVerified ?? currentUser.isEmailVerified) === true;
-  if (!isVerifiedContributor) {
+  // Strict check: Only users who are Approved by the Admin are allowed to access the application.
+  const isPendingApproval = currentUser.role !== 'admin' && currentUser.approvalStatus === 'pending';
+  const isRejected = currentUser.role !== 'admin' && currentUser.approvalStatus === 'rejected';
+
+  if (isPendingApproval) {
     return (
       <div className="min-h-screen bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-2xl p-6 border border-slate-200 shadow-2xl text-center space-y-4">
           <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto text-2xl shadow-inner">
-            ⚠️
+            ⏳
           </div>
-          <h2 className="text-xl font-bold text-slate-900">Email Verification Required</h2>
-          <p className="text-sm font-semibold text-slate-800">
-            Please verify your email address before continuing.
+          <h2 className="text-xl font-bold text-slate-900">Your account is pending admin approval</h2>
+          <p className="text-sm font-semibold text-slate-700">
+            Registration Submitted Successfully
           </p>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Only verified users can access the Contributor Dashboard. Please check your inbox for the verification link or request a new one below.
+            Your contributor profile has been registered and is currently awaiting review by the platform administrator. Once approved, you will be able to sign in and access the dashboard.
           </p>
-          <div className="pt-2 flex flex-col gap-2.5">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 text-left">
+            <span className="font-bold block mb-0.5">Account Details:</span>
+            <span>{currentUser.email} • Registered {currentUser.createdAt ? currentUser.createdAt.split('T')[0] : 'Today'}</span>
+          </div>
+          <div className="pt-2">
             <button
               type="button"
-              id="btn-unverified-gate-resend"
-              onClick={() => {
-                const unverifiedEmail = currentUser.email;
-                logout();
-                setVerificationModal({
-                  isOpen: true,
-                  email: unverifiedEmail,
-                  initialState: 'unverified_notice',
-                });
-              }}
-              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
-            >
-              Resend Verification Email
-            </button>
-            <button
-              type="button"
-              id="btn-unverified-gate-return"
+              id="btn-pending-gate-return"
               onClick={() => logout()}
-              className="w-full py-2 px-4 text-slate-600 hover:text-slate-900 font-medium text-xs cursor-pointer"
+              className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
             >
-              Return to Website
+              Sign Out & Return Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isRejected) {
+    return (
+      <div className="min-h-screen bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl p-6 border border-slate-200 shadow-2xl text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto text-2xl shadow-inner">
+            ✕
+          </div>
+          <h2 className="text-xl font-bold text-slate-900">Account Registration Declined</h2>
+          <p className="text-sm font-semibold text-rose-700">
+            Your registration was not approved by the administrator.
+          </p>
+          {currentUser.rejectionReason && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 text-left">
+              <span className="font-bold block mb-0.5">Reason:</span>
+              <span>{currentUser.rejectionReason}</span>
+            </div>
+          )}
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Please contact the administration team at support@nexora.work if you believe this is an error.
+          </p>
+          <div className="pt-2">
+            <button
+              type="button"
+              id="btn-rejected-gate-return"
+              onClick={() => logout()}
+              className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              Sign Out & Return Home
             </button>
           </div>
         </div>

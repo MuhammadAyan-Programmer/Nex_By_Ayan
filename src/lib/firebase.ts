@@ -1,5 +1,16 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  applyActionCode,
+  checkActionCode,
+  signInWithEmailAndPassword,
+  reload,
+  signOut,
+  onAuthStateChanged,
+  type User as FirebaseUser,
+} from 'firebase/auth';
 import {
   getFirestore,
   doc,
@@ -189,6 +200,9 @@ export async function saveUserToFirestore(user: UserProfile): Promise<boolean> {
           skills: Array.isArray(user.skills) ? user.skills : [],
           experience: user.experience || '',
           role: user.role || 'contributor',
+          approvalStatus: user.approvalStatus || (user.role === 'admin' ? 'approved' : 'approved'),
+          approvalDate: user.approvalDate || null,
+          rejectionReason: user.rejectionReason || null,
           isEmailVerified: !!(user.emailVerified ?? user.isEmailVerified),
           emailVerified: !!(user.emailVerified ?? user.isEmailVerified),
           profileStatus: user.profileStatus || 'Incomplete',
@@ -233,6 +247,9 @@ export async function fetchUsersFromFirestore(): Promise<UserProfile[]> {
             users.push({
               ...data,
               id: data.id || d.id,
+              approvalStatus: data.approvalStatus || (data.role === 'admin' ? 'approved' : 'approved'),
+              approvalDate: data.approvalDate,
+              rejectionReason: data.rejectionReason,
               isEmailVerified: isVerified,
               emailVerified: isVerified,
             });
@@ -271,6 +288,9 @@ export function subscribeToUsersFirestore(
             users.push({
               ...data,
               id: data.id || d.id,
+              approvalStatus: data.approvalStatus || (data.role === 'admin' ? 'approved' : 'approved'),
+              approvalDate: data.approvalDate,
+              rejectionReason: data.rejectionReason,
               isEmailVerified: isVerified,
               emailVerified: isVerified,
             });
@@ -543,5 +563,175 @@ export function subscribeToMaintenanceFirestore(
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
     return () => {};
+  }
+}
+
+// --- Firebase Authentication Built-in Email Verification Helpers ---
+
+export interface FirebaseSignUpResult {
+  success: boolean;
+  user?: FirebaseUser;
+  emailSent: boolean;
+  error?: string;
+  code?: string;
+}
+
+/**
+ * Creates user in Firebase Authentication and immediately dispatches
+ * the official Firebase verification email to their registered address.
+ */
+export async function firebaseSignUpAndSendVerification(
+  email: string,
+  pass: string
+): Promise<FirebaseSignUpResult> {
+  const normEmail = email.trim().toLowerCase();
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, normEmail, pass);
+    const user = cred.user;
+    let emailSent = false;
+    let emailError: string | undefined;
+
+    try {
+      await sendEmailVerification(user, {
+        url: window.location.origin,
+      });
+      emailSent = true;
+      console.log('[Firebase Auth] Built-in verification email sent immediately to:', normEmail);
+    } catch (sendErr: any) {
+      console.warn('[Firebase Auth] sendEmailVerification notice:', sendErr);
+      emailError = sendErr?.message || 'Could not dispatch verification email';
+    }
+
+    return {
+      success: true,
+      user,
+      emailSent,
+      error: emailError,
+    };
+  } catch (err: any) {
+    console.warn('[Firebase Auth] createUserWithEmailAndPassword code:', err?.code, err?.message);
+    return {
+      success: false,
+      code: err?.code,
+      error: err?.message || 'Firebase user creation failed',
+      emailSent: false,
+    };
+  }
+}
+
+/**
+ * Resends the verification email directly using Firebase Authentication.
+ */
+export async function firebaseResendVerificationEmail(
+  email?: string,
+  pass?: string
+): Promise<{
+  success: boolean;
+  message: string;
+  emailSent?: boolean;
+}> {
+  try {
+    let targetUser: FirebaseUser | null = auth.currentUser;
+
+    if (!targetUser && email && pass) {
+      try {
+        const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), pass);
+        targetUser = cred.user;
+      } catch (signInErr) {
+        console.warn('[Firebase Auth] Sign in attempt for resend notice:', signInErr);
+      }
+    }
+
+    if (!targetUser) {
+      return {
+        success: false,
+        message: 'No active Firebase session found. Please sign in or use direct activation to proceed.',
+        emailSent: false,
+      };
+    }
+
+    if (targetUser.emailVerified) {
+      return {
+        success: true,
+        message: 'Your email address is already verified in Firebase Authentication.',
+        emailSent: false,
+      };
+    }
+
+    await sendEmailVerification(targetUser, {
+      url: window.location.origin,
+    });
+
+    return {
+      success: true,
+      emailSent: true,
+      message: `A verification email has been sent by Firebase Authentication to ${targetUser.email}. Please check your inbox.`,
+    };
+  } catch (err: any) {
+    console.error('[Firebase Auth] Resend verification error:', err);
+    return {
+      success: false,
+      emailSent: false,
+      message: err?.message || 'Failed to dispatch verification email via Firebase.',
+    };
+  }
+}
+
+/**
+ * Verifies email using Firebase oobCode action link (e.g. from ?mode=verifyEmail&oobCode=...).
+ */
+export async function firebaseVerifyEmailWithActionCode(
+  oobCode: string
+): Promise<{
+  success: boolean;
+  email?: string;
+  message: string;
+  code?: string;
+}> {
+  try {
+    let email: string | undefined;
+    try {
+      const info = await checkActionCode(auth, oobCode);
+      email = info.data.email || undefined;
+    } catch (infoErr) {
+      console.warn('[Firebase Auth] checkActionCode warning:', infoErr);
+    }
+
+    await applyActionCode(auth, oobCode);
+
+    if (auth.currentUser) {
+      try {
+        await reload(auth.currentUser);
+      } catch (rErr) {
+        console.warn('[Firebase Auth] reload user notice:', rErr);
+      }
+    }
+
+    return {
+      success: true,
+      email: email || auth.currentUser?.email || undefined,
+      message: 'Your email address has been successfully verified through Firebase Authentication!',
+    };
+  } catch (err: any) {
+    console.error('[Firebase Auth] applyActionCode error:', err);
+    return {
+      success: false,
+      code: err?.code,
+      message: err?.message || 'The verification link is invalid or has expired.',
+    };
+  }
+}
+
+/**
+ * Checks if the current Firebase user's email has been verified.
+ */
+export async function firebaseCheckEmailVerified(): Promise<boolean> {
+  try {
+    if (!auth.currentUser) return false;
+    await reload(auth.currentUser);
+    return auth.currentUser.emailVerified === true;
+  } catch (e) {
+    console.warn('[Firebase Auth] reload error:', e);
+    return false;
   }
 }
