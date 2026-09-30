@@ -14,6 +14,8 @@ import type {
   StoredProject,
   StoredApplication,
   StoredProjectUpdate,
+  StoredQuickTask,
+  StoredQuickTaskSubmission,
 } from './server/db.ts';
 import {
   sendVerificationEmail,
@@ -959,6 +961,179 @@ apiRouter.delete('/project-updates/:id', async (req: Request, res: Response) => 
     const { id } = req.params;
     await db.deleteUpdate(id);
     res.json({ success: true, message: 'Update deleted.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// =================== QUICK TASKS API ===================
+
+// GET /api/quick-tasks - List all quick tasks
+apiRouter.get('/quick-tasks', async (_req: Request, res: Response) => {
+  try {
+    const tasks = await db.getQuickTasks();
+    res.json({ success: true, tasks });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/quick-tasks/:id - Single quick task
+apiRouter.get('/quick-tasks/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const task = await db.getQuickTaskById(id);
+    if (!task) {
+      return res.status(404).json({ success: false, message: 'Quick task not found' });
+    }
+    res.json({ success: true, task });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/quick-tasks - Create quick task
+apiRouter.post('/quick-tasks', async (req: Request, res: Response) => {
+  try {
+    const { title, description, instructions, submissionRequirements, referenceLink, reward, status, id } = req.body || {};
+    if (!title || !description || !instructions) {
+      return res.status(400).json({ success: false, message: 'Title, description, and instructions are required' });
+    }
+    const created = await db.createQuickTask({
+      id,
+      title: String(title).trim(),
+      description: String(description).trim(),
+      instructions: String(instructions).trim(),
+      submissionRequirements: String(submissionRequirements || '').trim(),
+      referenceLink: referenceLink ? String(referenceLink).trim() : undefined,
+      reward: reward ? String(reward).trim() : undefined,
+      status: status === 'closed' ? 'closed' : 'active',
+    });
+    res.json({ success: true, task: created, message: 'Quick task created successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /api/quick-tasks/:id - Update quick task
+apiRouter.put('/quick-tasks/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body || {};
+    const updated = await db.updateQuickTask(id, updates);
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Quick task not found' });
+    }
+    res.json({ success: true, task: updated, message: 'Quick task updated successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/quick-tasks/:id - Delete quick task
+apiRouter.delete('/quick-tasks/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await db.deleteQuickTask(id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Quick task not found' });
+    }
+    res.json({ success: true, message: 'Quick task deleted successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// =================== QUICK TASK SUBMISSIONS API ===================
+
+// GET /api/quick-task-submissions - List submissions (filter by taskId and/or userId)
+apiRouter.get('/quick-task-submissions', async (req: Request, res: Response) => {
+  try {
+    const taskId = req.query.taskId as string | undefined;
+    const userId = req.query.userId as string | undefined;
+    const submissions = await db.getQuickTaskSubmissions(taskId, userId);
+    res.json({ success: true, submissions });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/quick-tasks/:id/submissions - Submissions for a specific task
+apiRouter.get('/quick-tasks/:id/submissions', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const submissions = await db.getQuickTaskSubmissions(id);
+    res.json({ success: true, taskId: id, submissions });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/quick-task-submissions - Submit result for a quick task
+apiRouter.post('/quick-task-submissions', async (req: Request, res: Response) => {
+  try {
+    const { taskId, taskTitle, userId, userName, userEmail, submittedUrl, submittedText, id, status } = req.body || {};
+    if (!taskId || !userId) {
+      return res.status(400).json({ success: false, message: 'Task ID and User ID are required.' });
+    }
+    if (!submittedUrl && !submittedText) {
+      return res.status(400).json({ success: false, message: 'Please provide either a submission URL or text response.' });
+    }
+
+    const task = await db.getQuickTaskById(taskId);
+    const resolvedTitle = taskTitle || task?.title || 'Quick Task';
+
+    const submission = await db.createQuickTaskSubmission({
+      id,
+      taskId,
+      taskTitle: resolvedTitle,
+      userId,
+      userName: userName || 'Contributor',
+      userEmail: userEmail || '',
+      submittedUrl: submittedUrl ? String(submittedUrl).trim() : undefined,
+      submittedText: submittedText ? String(submittedText).trim() : undefined,
+      status: status || 'pending',
+    });
+
+    res.json({
+      success: true,
+      submission,
+      message: 'Task submitted successfully!',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/quick-task-submissions/:id/status - Review submission (Approved / Rejected / Pending)
+apiRouter.patch('/quick-task-submissions/:id/status', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, adminFeedback, reviewedBy } = req.body || {};
+    if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Status must be pending, approved, or rejected.' });
+    }
+
+    const updated = await db.updateQuickTaskSubmissionStatus(id, status, adminFeedback, reviewedBy);
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Submission not found.' });
+    }
+
+    res.json({ success: true, submission: updated, message: `Submission marked as ${status}.` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/quick-task-submissions/:id
+apiRouter.delete('/quick-task-submissions/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await db.deleteQuickTaskSubmission(id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Submission not found.' });
+    }
+    res.json({ success: true, message: 'Submission deleted.' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -13,6 +13,9 @@ import {
   MaintenanceConfig,
   MaintenanceState,
   MaintenanceStatus,
+  QuickTask,
+  QuickTaskSubmission,
+  QuickTaskSubmissionStatus,
 } from '../types';
 import {
   INITIAL_PROJECTS,
@@ -33,6 +36,13 @@ import {
   subscribeToApplicationsFirestore,
   saveProjectToFirestore,
   fetchProjectsFromFirestore,
+  saveQuickTaskToFirestore,
+  deleteQuickTaskFromFirestore,
+  fetchQuickTasksFromFirestore,
+  subscribeToQuickTasksFirestore,
+  saveQuickTaskSubmissionToFirestore,
+  fetchQuickTaskSubmissionsFromFirestore,
+  subscribeToQuickTaskSubmissionsFirestore,
   saveMaintenanceToFirestore,
   fetchMaintenanceFromFirestore,
   subscribeToMaintenanceFirestore,
@@ -162,6 +172,26 @@ interface AppContextType {
   createProjectUpdate: (data: Omit<ProjectUpdate, 'id' | 'createdAt' | 'readByUserIds'>) => void;
   deleteProjectUpdate: (id: string) => void;
   markUpdateRead: (updateId: string) => void;
+
+  // Quick Tasks
+  quickTasks: QuickTask[];
+  createQuickTask: (data: Omit<QuickTask, 'id' | 'createdAt'>) => Promise<QuickTask>;
+  updateQuickTask: (id: string, data: Partial<QuickTask>) => Promise<QuickTask | null>;
+  deleteQuickTask: (id: string) => Promise<boolean>;
+
+  // Quick Task Submissions
+  quickTaskSubmissions: QuickTaskSubmission[];
+  submitQuickTask: (data: {
+    taskId: string;
+    taskTitle?: string;
+    submittedUrl?: string;
+    submittedText?: string;
+  }) => Promise<{ success: boolean; message: string; submission?: QuickTaskSubmission }>;
+  updateQuickTaskSubmissionStatus: (
+    id: string,
+    status: QuickTaskSubmissionStatus,
+    adminFeedback?: string
+  ) => Promise<{ success: boolean; message: string }>;
 
   // System & Settings
   resetToDefaults: () => void;
@@ -363,6 +393,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     loadStorage<NotificationItem[]>('notifications', INITIAL_NOTIFICATIONS)
   );
 
+  const DEFAULT_INITIAL_QUICK_TASK: QuickTask = {
+    id: 'task-quick-001',
+    title: 'Share Nexora Workforce on LinkedIn',
+    description: 'Create a short public post on LinkedIn introducing Nexora Workforce and submit your post link.',
+    instructions: '1. Log into your LinkedIn account.\n2. Write a short, professional post introducing Nexora Workforce to your network (mentioning our platform at https://nexora.work).\n3. Publish the post with visibility set to Public.\n4. Copy the URL of your published post and paste it into the submission link field below.',
+    submissionRequirements: 'Provide the direct URL of your public LinkedIn post. Optionally include any additional notes in the text field.',
+    referenceLink: 'https://www.linkedin.com',
+    reward: '$5.00',
+    status: 'active',
+    createdAt: '2026-09-20T10:00:00.000Z',
+  };
+
+  const [quickTasks, setQuickTasks] = useState<QuickTask[]>(() => {
+    const stored = loadStorage<QuickTask[]>('quickTasks', [DEFAULT_INITIAL_QUICK_TASK]);
+    return stored.length > 0 ? stored : [DEFAULT_INITIAL_QUICK_TASK];
+  });
+  const [quickTaskSubmissions, setQuickTaskSubmissions] = useState<QuickTaskSubmission[]>(() =>
+    loadStorage<QuickTaskSubmission[]>('quickTaskSubmissions', [])
+  );
+
   // Sync to storage on change
   useEffect(() => saveStorage('currentUser', currentUser), [currentUser]);
   useEffect(() => saveStorage('users', users), [users]);
@@ -373,6 +423,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveStorage('withdrawals', withdrawals), [withdrawals]);
   useEffect(() => saveStorage('projectUpdates', projectUpdates), [projectUpdates]);
   useEffect(() => saveStorage('notifications', notifications), [notifications]);
+  useEffect(() => saveStorage('quickTasks', quickTasks), [quickTasks]);
+  useEffect(() => saveStorage('quickTaskSubmissions', quickTaskSubmissions), [quickTaskSubmissions]);
 
   // Real-time synchronization: keep project approved seats and capacity status synchronized with approved applications
   useEffect(() => {
@@ -414,6 +466,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setWithdrawals(JSON.parse(e.newValue));
         } else if (e.key === 'nexora_users') {
           setUsers(JSON.parse(e.newValue));
+        } else if (e.key === 'nexora_quickTasks') {
+          setQuickTasks(JSON.parse(e.newValue));
+        } else if (e.key === 'nexora_quickTaskSubmissions') {
+          setQuickTaskSubmissions(JSON.parse(e.newValue));
         }
       } catch (err) {
         console.warn('Storage sync parse error:', err);
@@ -436,10 +492,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsSyncing(true);
 
       // Phase 1: FAST, sub-50ms fetch from central backend Express server
-      const [projRes, appRes, userRes] = await Promise.all([
+      const [projRes, appRes, userRes, qtaskRes, qsubRes] = await Promise.all([
         fetch(`${API_BASE}/api/projects`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/applications`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/users`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/api/quick-tasks`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/api/quick-task-submissions`).then((r) => r.json()).catch(() => null),
       ]);
 
       setSyncError(null);
@@ -451,6 +509,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Apply Projects immediately
       if (projRes?.success && Array.isArray(projRes.projects) && projRes.projects.length > 0) {
         setProjects(projRes.projects);
+      }
+
+      // Apply Quick Tasks immediately
+      if (qtaskRes?.success && Array.isArray(qtaskRes.tasks) && qtaskRes.tasks.length > 0) {
+        setQuickTasks(qtaskRes.tasks);
+        saveStorage('quickTasks', qtaskRes.tasks);
+      }
+
+      // Apply Quick Task Submissions immediately
+      if (qsubRes?.success && Array.isArray(qsubRes.submissions)) {
+        setQuickTaskSubmissions(qsubRes.submissions);
+        saveStorage('quickTaskSubmissions', qsubRes.submissions);
       }
 
       // Apply Applications immediately
@@ -525,14 +595,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!isQuotaExhausted()) {
         (async () => {
           try {
-            const [fbUsers, fbApps, fbProjects] = await Promise.all([
+            const [fbUsers, fbApps, fbProjects, fbQuickTasks, fbQuickSubs] = await Promise.all([
               fetchUsersFromFirestore().catch(() => [] as UserProfile[]),
               fetchApplicationsFromFirestore().catch(() => [] as ProjectApplication[]),
               fetchProjectsFromFirestore().catch(() => [] as Project[]),
+              fetchQuickTasksFromFirestore().catch(() => [] as QuickTask[]),
+              fetchQuickTaskSubmissionsFromFirestore().catch(() => [] as QuickTaskSubmission[]),
             ]);
 
             if (fbProjects && fbProjects.length > 0) {
               setProjects(fbProjects);
+            }
+
+            if (fbQuickTasks && fbQuickTasks.length > 0) {
+              setQuickTasks((prev) => {
+                const map = new Map<string, QuickTask>();
+                for (const t of prev) map.set(t.id, t);
+                for (const t of fbQuickTasks) map.set(t.id, t);
+                const merged = Array.from(map.values());
+                saveStorage('quickTasks', merged);
+                return merged;
+              });
+            }
+
+            if (fbQuickSubs && fbQuickSubs.length > 0) {
+              setQuickTaskSubmissions((prev) => {
+                const map = new Map<string, QuickTaskSubmission>();
+                for (const s of prev) map.set(s.id, s);
+                for (const s of fbQuickSubs) map.set(s.id, s);
+                const merged = Array.from(map.values());
+                saveStorage('quickTaskSubmissions', merged);
+                return merged;
+              });
             }
 
             if (fbApps && fbApps.length > 0) {
@@ -653,6 +747,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     );
 
+    // 3. Firebase Firestore Real-Time Listener for Quick Tasks
+    const unsubscribeQuickTasks = subscribeToQuickTasksFirestore(
+      (fbTasks) => {
+        if (fbTasks && fbTasks.length > 0) {
+          setQuickTasks((prev) => {
+            const map = new Map<string, QuickTask>();
+            for (const t of prev) map.set(t.id, t);
+            for (const t of fbTasks) map.set(t.id, t);
+            const merged = Array.from(map.values());
+            saveStorage('quickTasks', merged);
+            return merged;
+          });
+        }
+      },
+      (err) => {
+        console.warn('Firestore quick tasks subscription notice:', err);
+      }
+    );
+
+    // 4. Firebase Firestore Real-Time Listener for Quick Task Submissions
+    const unsubscribeQuickSubs = subscribeToQuickTaskSubmissionsFirestore(
+      (fbSubs) => {
+        if (fbSubs && fbSubs.length > 0) {
+          setQuickTaskSubmissions((prev) => {
+            const map = new Map<string, QuickTaskSubmission>();
+            for (const s of prev) map.set(s.id, s);
+            for (const s of fbSubs) map.set(s.id, s);
+            const merged = Array.from(map.values());
+            saveStorage('quickTaskSubmissions', merged);
+            return merged;
+          });
+        }
+      },
+      (err) => {
+        console.warn('Firestore quick submissions subscription notice:', err);
+      }
+    );
+
     // Periodic polling as secondary fallback (every 60s)
     const pollInterval = setInterval(() => {
       refreshLiveServerData();
@@ -666,6 +798,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       unsubscribeUsers();
       unsubscribeApps();
+      unsubscribeQuickTasks();
+      unsubscribeQuickSubs();
       clearInterval(pollInterval);
       window.removeEventListener('focus', handleFocus);
     };
@@ -2086,6 +2220,207 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProjectUpdates((prev) => prev.filter((u) => u.id !== id));
   };
 
+  // =================== QUICK TASKS ===================
+
+  const createQuickTask = async (
+    data: Omit<QuickTask, 'id' | 'createdAt'>
+  ): Promise<QuickTask> => {
+    const newTask: QuickTask = {
+      ...data,
+      id: `qtask-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: new Date().toISOString(),
+      status: data.status || 'active',
+    };
+
+    setQuickTasks((prev) => [newTask, ...prev]);
+
+    // Send to backend server
+    fetch(`${API_BASE}/api/quick-tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newTask),
+    }).catch(() => {});
+
+    // Save to Firestore
+    saveQuickTaskToFirestore(newTask).catch(() => {});
+
+    return newTask;
+  };
+
+  const updateQuickTask = async (
+    id: string,
+    data: Partial<QuickTask>
+  ): Promise<QuickTask | null> => {
+    let updatedTask: QuickTask | null = null;
+
+    setQuickTasks((prev) => {
+      const idx = prev.findIndex((t) => t.id === id);
+      if (idx === -1) return prev;
+      const updated = {
+        ...prev[idx],
+        ...data,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedTask = updated;
+      const next = [...prev];
+      next[idx] = updated;
+      return next;
+    });
+
+    if (updatedTask) {
+      fetch(`${API_BASE}/api/quick-tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }).catch(() => {});
+
+      saveQuickTaskToFirestore(updatedTask).catch(() => {});
+    }
+
+    return updatedTask;
+  };
+
+  const deleteQuickTask = async (id: string): Promise<boolean> => {
+    setQuickTasks((prev) => prev.filter((t) => t.id !== id));
+
+    fetch(`${API_BASE}/api/quick-tasks/${id}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+
+    deleteQuickTaskFromFirestore(id).catch(() => {});
+
+    return true;
+  };
+
+  // =================== QUICK TASK SUBMISSIONS ===================
+
+  const submitQuickTask = async (data: {
+    taskId: string;
+    taskTitle?: string;
+    submittedUrl?: string;
+    submittedText?: string;
+  }): Promise<{ success: boolean; message: string; submission?: QuickTaskSubmission }> => {
+    if (!currentUser) {
+      return { success: false, message: 'Please sign in to submit a quick task.' };
+    }
+
+    if (!data.submittedUrl && !data.submittedText) {
+      return { success: false, message: 'Please provide either a submission URL or text response.' };
+    }
+
+    const task = quickTasks.find((t) => t.id === data.taskId);
+    const resolvedTitle = data.taskTitle || task?.title || 'Quick Task';
+
+    const newSubmission: QuickTaskSubmission = {
+      id: `qsub-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      taskId: data.taskId,
+      taskTitle: resolvedTitle,
+      userId: currentUser.id,
+      userName: `${currentUser.firstName} ${currentUser.lastName}`.trim(),
+      userEmail: currentUser.email,
+      submittedUrl: data.submittedUrl ? data.submittedUrl.trim() : undefined,
+      submittedText: data.submittedText ? data.submittedText.trim() : undefined,
+      status: 'pending',
+      submittedAt: new Date().toISOString(),
+    };
+
+    setQuickTaskSubmissions((prev) => [newSubmission, ...prev]);
+
+    // Send to backend
+    fetch(`${API_BASE}/api/quick-task-submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newSubmission),
+    }).catch(() => {});
+
+    // Save to Firestore
+    saveQuickTaskSubmissionToFirestore(newSubmission).catch(() => {});
+
+    // Notification to user
+    const userNotif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      userId: currentUser.id,
+      title: 'Quick Task Submitted! 🚀',
+      message: `Your result for "${resolvedTitle}" has been submitted successfully and is awaiting admin review.`,
+      type: 'system',
+      date: new Date().toISOString().split('T')[0],
+      read: false,
+    };
+    setNotifications((prev) => [userNotif, ...prev]);
+
+    return {
+      success: true,
+      message: 'Task submitted successfully!',
+      submission: newSubmission,
+    };
+  };
+
+  const updateQuickTaskSubmissionStatus = async (
+    id: string,
+    status: QuickTaskSubmissionStatus,
+    adminFeedback?: string
+  ): Promise<{ success: boolean; message: string }> => {
+    let updatedSub: QuickTaskSubmission | null = null;
+
+    setQuickTaskSubmissions((prev) => {
+      const idx = prev.findIndex((s) => s.id === id);
+      if (idx === -1) return prev;
+      const updated: QuickTaskSubmission = {
+        ...prev[idx],
+        status,
+        adminFeedback: adminFeedback !== undefined ? adminFeedback : prev[idx].adminFeedback,
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: currentUser?.email || 'admin',
+      };
+      updatedSub = updated;
+      const next = [...prev];
+      next[idx] = updated;
+      return next;
+    });
+
+    if (updatedSub) {
+      fetch(`${API_BASE}/api/quick-task-submissions/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status,
+          adminFeedback,
+          reviewedBy: currentUser?.email || 'admin',
+        }),
+      }).catch(() => {});
+
+      saveQuickTaskSubmissionToFirestore(updatedSub).catch(() => {});
+
+      // Notify contributor about status update
+      const sub = updatedSub as QuickTaskSubmission;
+      const notif: NotificationItem = {
+        id: `notif-${Date.now()}`,
+        userId: sub.userId,
+        title:
+          status === 'approved'
+            ? 'Quick Task Approved! 🎉'
+            : status === 'rejected'
+            ? 'Quick Task Needs Revision'
+            : 'Quick Task Status Updated',
+        message:
+          status === 'approved'
+            ? `Your submission for "${sub.taskTitle}" was approved by the administrator!`
+            : status === 'rejected'
+            ? `Your submission for "${sub.taskTitle}" was marked as rejected.${adminFeedback ? ` Reason: ${adminFeedback}` : ''}`
+            : `Your submission for "${sub.taskTitle}" is pending review.`,
+        type: 'system',
+        date: new Date().toISOString().split('T')[0],
+        read: false,
+      };
+      setNotifications((prev) => [notif, ...prev]);
+    }
+
+    return {
+      success: true,
+      message: `Submission marked as ${status}.`,
+    };
+  };
+
   const resetToDefaults = () => {
     setProjects(INITIAL_PROJECTS);
     setApplications(INITIAL_APPLICATIONS);
@@ -2360,6 +2695,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createProjectUpdate,
         deleteProjectUpdate,
         markUpdateRead,
+
+        quickTasks,
+        createQuickTask,
+        updateQuickTask,
+        deleteQuickTask,
+
+        quickTaskSubmissions,
+        submitQuickTask,
+        updateQuickTaskSubmissionStatus,
 
         resetToDefaults,
 

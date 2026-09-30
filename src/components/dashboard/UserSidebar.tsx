@@ -13,12 +13,14 @@ import {
   Shield,
   CheckCircle2,
   AlertTriangle,
+  Zap,
 } from 'lucide-react';
 import { LogoIcon } from '../common/Logo';
 
 export type UserTab =
   | 'dashboard'
   | 'browse-projects'
+  | 'quick-tasks'
   | 'my-applications'
   | 'active-projects'
   | 'earnings'
@@ -37,7 +39,7 @@ export const UserSidebar: React.FC<UserSidebarProps> = ({
   setActiveTab,
   onOpenEmailVerifyModal,
 }) => {
-  const { currentUser, logout, notifications, applications } = useApp();
+  const { currentUser, logout, notifications, applications, quickTasks } = useApp();
 
   if (!currentUser) return null;
 
@@ -50,10 +52,17 @@ export const UserSidebar: React.FC<UserSidebarProps> = ({
       a.userId === currentUser.id &&
       (a.status === 'Applied' || a.status === 'Under Review' || a.status === 'Waitlisted')
   ).length;
+  const activeQuickTasksCount = quickTasks.filter((t) => t.status === 'active').length;
 
   const navItems: { id: UserTab; label: string; icon: React.ElementType; badge?: string | number }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'browse-projects', label: 'Browse Projects', icon: Compass },
+    {
+      id: 'quick-tasks',
+      label: 'Quick Tasks',
+      icon: Zap,
+      badge: activeQuickTasksCount > 0 ? activeQuickTasksCount : undefined,
+    },
     {
       id: 'my-applications',
       label: 'My Applications',

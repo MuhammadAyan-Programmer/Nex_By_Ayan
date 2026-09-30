@@ -32,6 +32,20 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // Quick Tasks published by administrator
+    match /quick_tasks/{taskId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
+    // Quick Task submissions submitted by contributors
+    match /quick_task_submissions/{submissionId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
     // System configuration and maintenance status
     match /system/{docId} {
       allow read: if true;

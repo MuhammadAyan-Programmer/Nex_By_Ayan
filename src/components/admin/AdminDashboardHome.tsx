@@ -17,6 +17,7 @@ import {
   RefreshCw,
   AlertTriangle,
   Wrench,
+  Zap,
 } from 'lucide-react';
 
 interface AdminDashboardHomeProps {
@@ -33,6 +34,8 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
     projects,
     applications,
     withdrawals,
+    quickTasks,
+    quickTaskSubmissions,
     refreshLiveServerData,
     isSyncing,
     lastSyncedAt,
@@ -52,6 +55,9 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
   ).length;
   const approvedContributors = applications.filter((a) => a.status === 'Approved').length;
   const rejectedApplications = applications.filter((a) => a.status === 'Rejected').length;
+
+  const totalQuickTasks = quickTasks.length;
+  const pendingQuickTaskSubs = quickTaskSubmissions.filter((s) => s.status === 'pending').length;
 
   const pendingApprovalsCount = users.filter(
     (u) => u.role !== 'admin' && u.approvalStatus === 'pending'
@@ -218,6 +224,20 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
           </div>
           <p className="text-2xl font-bold text-slate-900">{totalProjects}</p>
           <span className="text-[10px] text-slate-400">Across 18 categories</span>
+        </div>
+
+        <div
+          onClick={() => onNavigate('quick-tasks')}
+          className="p-4 bg-white rounded-xl border border-slate-200 hover:border-purple-300 transition-all cursor-pointer shadow-2xs group"
+        >
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-xs font-semibold">Quick Tasks</span>
+            <Zap className="w-4 h-4 text-amber-500 group-hover:scale-110 transition-transform" />
+          </div>
+          <p className="text-2xl font-bold text-slate-900">{totalQuickTasks}</p>
+          <span className="text-[10px] text-amber-600 font-semibold">
+            {pendingQuickTaskSubs > 0 ? `${pendingQuickTaskSubs} Pending Review` : 'Direct Participation'}
+          </span>
         </div>
 
         <div

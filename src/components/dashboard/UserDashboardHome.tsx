@@ -15,6 +15,7 @@ import {
   Clock,
   AlertCircle,
   DollarSign,
+  Zap,
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
 import { getProjectDisplayRate } from '../../utils/paymentUtils';
@@ -28,7 +29,7 @@ export const UserDashboardHome: React.FC<UserDashboardHomeProps> = ({
   onNavigate,
   onViewProject,
 }) => {
-  const { currentUser, projects, applications, projectUpdates, userBalance } = useApp();
+  const { currentUser, projects, applications, projectUpdates, userBalance, quickTasks, quickTaskSubmissions } = useApp();
 
   if (!currentUser) return null;
 
@@ -45,6 +46,9 @@ export const UserDashboardHome: React.FC<UserDashboardHomeProps> = ({
       (a.status === 'Applied' || a.status === 'Under Review' || a.status === 'Waitlisted')
   );
 
+  const activeQuickTasks = quickTasks.filter((t) => t.status === 'active');
+  const myQuickTaskSubs = quickTaskSubmissions.filter((s) => s.userId === currentUser.id);
+
   return (
     <div className="space-y-6">
       {/* Welcome & Top Metric Cards */}
@@ -60,8 +64,16 @@ export const UserDashboardHome: React.FC<UserDashboardHomeProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => onNavigate('quick-tasks')}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-amber-900 bg-amber-400 hover:bg-amber-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
+          >
+            <Zap className="w-3.5 h-3.5 fill-amber-950" />
+            <span>Quick Tasks ({activeQuickTasks.length})</span>
+          </button>
+          <button
+            type="button"
             onClick={() => onNavigate('browse-projects')}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
           >
             <Compass className="w-3.5 h-3.5" />
             Browse New Projects
@@ -138,6 +150,34 @@ export const UserDashboardHome: React.FC<UserDashboardHomeProps> = ({
             Across approved milestones
           </span>
         </div>
+      </div>
+
+      {/* Quick Tasks Spotlight Banner */}
+      <div className="p-4 bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 border border-amber-300/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <Zap className="w-5 h-5 fill-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-900 text-sm">Quick Tasks Available</span>
+              <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900">
+                {activeQuickTasks.length} Active
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Participate directly with zero CV screening or application waiting. Submit results and get reviewed!
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onNavigate('quick-tasks')}
+          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer shadow-xs"
+        >
+          <span>Explore Quick Tasks</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Main Row: Active Projects & Recent Updates */}

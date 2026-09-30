@@ -17,12 +17,14 @@ import { EarningsView } from './components/dashboard/EarningsView';
 import { PaymentMethodsView } from './components/dashboard/PaymentMethodsView';
 import { UserProfileView } from './components/dashboard/UserProfileView';
 import { NotificationsView } from './components/dashboard/NotificationsView';
+import { UserQuickTasksView } from './components/dashboard/UserQuickTasksView';
 
 // Admin imports
 import { AdminSidebar, AdminTab } from './components/admin/AdminSidebar';
 import { AdminDashboardHome } from './components/admin/AdminDashboardHome';
 import { AdminCreateProjectModal } from './components/admin/AdminCreateProjectModal';
 import { AdminProjectsView } from './components/admin/AdminProjectsView';
+import { AdminQuickTasksView } from './components/admin/AdminQuickTasksView';
 import { AdminApplicationsView } from './components/admin/AdminApplicationsView';
 import { AdminApprovedContributorsView } from './components/admin/AdminApprovedContributorsView';
 import { AdminProjectUpdatesView } from './components/admin/AdminProjectUpdatesView';
@@ -302,6 +304,7 @@ const AppContent: React.FC = () => {
                 }}
               />
             )}
+            {adminTab === 'quick-tasks' && <AdminQuickTasksView />}
             {adminTab === 'applications' && (
               <AdminApplicationsView initialProjectId={adminProjectApplicationsFilter} />
             )}
@@ -460,6 +463,8 @@ const AppContent: React.FC = () => {
               onApply={handleApplyToProject}
             />
           )}
+
+          {contributorTab === 'quick-tasks' && <UserQuickTasksView />}
 
           {contributorTab === 'my-applications' && (
             <MyApplicationsView onNavigate={setContributorTab} />

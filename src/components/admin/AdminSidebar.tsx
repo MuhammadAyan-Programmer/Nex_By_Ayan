@@ -12,6 +12,7 @@ import {
   LogOut,
   UserCheck,
   Wrench,
+  Zap,
 } from 'lucide-react';
 import { LogoIcon } from '../common/Logo';
 
@@ -19,6 +20,7 @@ export type AdminTab =
   | 'dashboard'
   | 'users'
   | 'projects'
+  | 'quick-tasks'
   | 'applications'
   | 'approved-contributors'
   | 'project-updates'
@@ -37,7 +39,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   setActiveTab,
   onOpenCreateProject,
 }) => {
-  const { currentUser, logout, applications, withdrawals, maintenanceState, users } = useApp();
+  const { currentUser, logout, applications, withdrawals, maintenanceState, users, quickTaskSubmissions } = useApp();
 
   const pendingApprovals = users.filter(
     (u) => u.role !== 'admin' && u.approvalStatus === 'pending'
@@ -51,6 +53,10 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
     (w) => w.status === 'Withdrawal Requested'
   ).length;
 
+  const pendingQuickTaskSubs = quickTaskSubmissions.filter(
+    (s) => s.status === 'pending'
+  ).length;
+
   const navItems: { id: AdminTab; label: string; icon: React.ElementType; badge?: number; statusBadge?: string }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     {
@@ -60,6 +66,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       badge: pendingApprovals > 0 ? pendingApprovals : undefined,
     },
     { id: 'projects', label: 'Projects', icon: FolderKanban },
+    {
+      id: 'quick-tasks',
+      label: 'Quick Tasks',
+      icon: Zap,
+      badge: pendingQuickTaskSubs > 0 ? pendingQuickTaskSubs : undefined,
+    },
     {
       id: 'applications',
       label: 'Applications',

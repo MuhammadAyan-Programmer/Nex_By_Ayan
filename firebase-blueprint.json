@@ -83,6 +83,42 @@
         "lastUpdated": { "type": "string", "description": "Last updated timestamp" },
         "updatedBy": { "type": "string", "description": "Administrator email who last updated" }
       }
+    },
+    "QuickTask": {
+      "title": "QuickTask",
+      "description": "Lightweight quick tasks published by administrator that users can participate directly in",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Task ID" },
+        "title": { "type": "string", "description": "Task headline" },
+        "description": { "type": "string", "description": "Short task summary" },
+        "instructions": { "type": "string", "description": "Detailed task instructions" },
+        "submissionRequirements": { "type": "string", "description": "Instructions on what to submit" },
+        "referenceLink": { "type": "string", "description": "Optional reference URL" },
+        "reward": { "type": "string", "description": "Optional reward/compensation text" },
+        "status": { "type": "string", "enum": ["active", "closed"], "description": "Status of task" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["id", "title", "description", "instructions", "submissionRequirements", "status", "createdAt"]
+    },
+    "QuickTaskSubmission": {
+      "title": "QuickTaskSubmission",
+      "description": "Contributor submission response for a specific quick task",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Submission ID" },
+        "taskId": { "type": "string", "description": "Associated quick task ID" },
+        "taskTitle": { "type": "string", "description": "Title of associated task" },
+        "userId": { "type": "string", "description": "Submitter user ID" },
+        "userName": { "type": "string", "description": "Submitter full name" },
+        "userEmail": { "type": "string", "format": "email", "description": "Submitter email" },
+        "submittedUrl": { "type": "string", "description": "Submitted link or URL" },
+        "submittedText": { "type": "string", "description": "Submitted text response" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Review status" },
+        "submittedAt": { "type": "string", "description": "Submission timestamp" },
+        "adminFeedback": { "type": "string", "description": "Review notes or feedback from admin" }
+      },
+      "required": ["id", "taskId", "userId", "userName", "userEmail", "status", "submittedAt"]
     }
   },
   "firestore": {
@@ -97,6 +133,14 @@
     "/projects/{projectId}": {
       "schema": "#/entities/Project",
       "description": "Workforce projects"
+    },
+    "/quick_tasks/{taskId}": {
+      "schema": "#/entities/QuickTask",
+      "description": "Quick tasks published by admin"
+    },
+    "/quick_task_submissions/{submissionId}": {
+      "schema": "#/entities/QuickTaskSubmission",
+      "description": "Contributor submissions for quick tasks"
     },
     "/system/{docId}": {
       "schema": "#/entities/SystemConfig",

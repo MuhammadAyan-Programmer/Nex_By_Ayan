@@ -101,6 +101,35 @@ export interface StoredProjectUpdate {
   readByUserIds: string[];
 }
 
+export interface StoredQuickTask {
+  id: string;
+  title: string;
+  description: string;
+  instructions: string;
+  submissionRequirements: string;
+  referenceLink?: string;
+  reward?: string;
+  status: 'active' | 'closed';
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface StoredQuickTaskSubmission {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  submittedUrl?: string;
+  submittedText?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: string;
+  adminFeedback?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
 // Password hashing utility using built-in Node crypto (scrypt)
 export function hashPassword(password: string): string {
   if (!password) return '';
@@ -237,6 +266,8 @@ class DatabaseService {
   private projectsCache: StoredProject[] = [CANONICAL_ARABIC_PROJECT];
   private applicationsCache: StoredApplication[] = [];
   private updatesCache: StoredProjectUpdate[] = [];
+  private quickTasksCache: StoredQuickTask[] = [];
+  private quickTaskSubmissionsCache: StoredQuickTaskSubmission[] = [];
 
   constructor() {
     const rawUsers = loadJsonFile<StoredUser[]>('users.json', []);
@@ -253,6 +284,21 @@ class DatabaseService {
     }
     this.applicationsCache = loadJsonFile<StoredApplication[]>('applications.json', []);
     this.updatesCache = loadJsonFile<StoredProjectUpdate[]>('updates.json', []);
+
+    const defaultQuickTask: StoredQuickTask = {
+      id: 'task-quick-001',
+      title: 'Share Nexora Workforce on LinkedIn',
+      description: 'Create a short public post on LinkedIn introducing Nexora Workforce and submit your post link.',
+      instructions: '1. Log into your LinkedIn account.\n2. Write a short, professional post introducing Nexora Workforce to your network (mentioning our platform at https://nexora.work).\n3. Publish the post with visibility set to Public.\n4. Copy the URL of your published post and paste it into the submission link field below.',
+      submissionRequirements: 'Provide the direct URL of your public LinkedIn post. Optionally include any additional notes in the text field.',
+      referenceLink: 'https://www.linkedin.com',
+      reward: '$5.00',
+      status: 'active',
+      createdAt: '2026-09-20T10:00:00.000Z',
+    };
+    const loadedQuickTasks = loadJsonFile<StoredQuickTask[]>('quick_tasks.json', [defaultQuickTask]);
+    this.quickTasksCache = loadedQuickTasks.length > 0 ? loadedQuickTasks : [defaultQuickTask];
+    this.quickTaskSubmissionsCache = loadJsonFile<StoredQuickTaskSubmission[]>('quick_task_submissions.json', []);
 
     // Immediately guarantee single Admin account exists in memory with hashed password
     this.ensureSingleAdminAccount();
@@ -717,6 +763,8 @@ class DatabaseService {
     writeJsonFile('projects.json', this.projectsCache);
     writeJsonFile('applications.json', this.applicationsCache);
     writeJsonFile('updates.json', this.updatesCache);
+    writeJsonFile('quick_tasks.json', this.quickTasksCache);
+    writeJsonFile('quick_task_submissions.json', this.quickTaskSubmissionsCache);
   }
 
   private recalculateProjectCapacities(): void {
@@ -1425,6 +1473,106 @@ class DatabaseService {
     this.updatesCache = this.updatesCache.filter((u) => u.id !== id);
     this.saveAll();
     return this.updatesCache.length < prevLen;
+  }
+
+  // =================== QUICK TASKS API ===================
+
+  public async getQuickTasks(): Promise<StoredQuickTask[]> {
+    return this.quickTasksCache;
+  }
+
+  public async getQuickTaskById(id: string): Promise<StoredQuickTask | undefined> {
+    return this.quickTasksCache.find((t) => t.id === id);
+  }
+
+  public async createQuickTask(taskData: Omit<StoredQuickTask, 'id' | 'createdAt'> & { id?: string }): Promise<StoredQuickTask> {
+    const newTask: StoredQuickTask = {
+      ...taskData,
+      id: taskData.id || `qtask-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      status: taskData.status || 'active',
+      createdAt: new Date().toISOString(),
+    };
+    this.quickTasksCache.unshift(newTask);
+    this.saveAll();
+    return newTask;
+  }
+
+  public async updateQuickTask(id: string, updates: Partial<StoredQuickTask>): Promise<StoredQuickTask | undefined> {
+    const idx = this.quickTasksCache.findIndex((t) => t.id === id);
+    if (idx === -1) return undefined;
+    const updated: StoredQuickTask = {
+      ...this.quickTasksCache[idx],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    this.quickTasksCache[idx] = updated;
+    this.saveAll();
+    return updated;
+  }
+
+  public async deleteQuickTask(id: string): Promise<boolean> {
+    const prevLen = this.quickTasksCache.length;
+    this.quickTasksCache = this.quickTasksCache.filter((t) => t.id !== id);
+    this.saveAll();
+    return this.quickTasksCache.length < prevLen;
+  }
+
+  // =================== QUICK TASK SUBMISSIONS API ===================
+
+  public async getQuickTaskSubmissions(taskId?: string, userId?: string): Promise<StoredQuickTaskSubmission[]> {
+    let list = this.quickTaskSubmissionsCache;
+    if (taskId) {
+      list = list.filter((s) => s.taskId === taskId);
+    }
+    if (userId) {
+      list = list.filter((s) => s.userId === userId);
+    }
+    return list;
+  }
+
+  public async createQuickTaskSubmission(
+    data: Omit<StoredQuickTaskSubmission, 'id' | 'submittedAt' | 'status'> & {
+      id?: string;
+      status?: 'pending' | 'approved' | 'rejected';
+    }
+  ): Promise<StoredQuickTaskSubmission> {
+    const newSub: StoredQuickTaskSubmission = {
+      ...data,
+      id: data.id || `qsub-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      status: data.status || 'pending',
+      submittedAt: new Date().toISOString(),
+    };
+    this.quickTaskSubmissionsCache.unshift(newSub);
+    this.saveAll();
+    return newSub;
+  }
+
+  public async updateQuickTaskSubmissionStatus(
+    id: string,
+    status: 'pending' | 'approved' | 'rejected',
+    adminFeedback?: string,
+    reviewedBy?: string
+  ): Promise<StoredQuickTaskSubmission | undefined> {
+    const idx = this.quickTaskSubmissionsCache.findIndex((s) => s.id === id);
+    if (idx === -1) return undefined;
+    const existing = this.quickTaskSubmissionsCache[idx];
+    const updated: StoredQuickTaskSubmission = {
+      ...existing,
+      status,
+      adminFeedback: adminFeedback !== undefined ? adminFeedback : existing.adminFeedback,
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: reviewedBy || 'admin',
+    };
+    this.quickTaskSubmissionsCache[idx] = updated;
+    this.saveAll();
+    return updated;
+  }
+
+  public async deleteQuickTaskSubmission(id: string): Promise<boolean> {
+    const prevLen = this.quickTaskSubmissionsCache.length;
+    this.quickTaskSubmissionsCache = this.quickTaskSubmissionsCache.filter((s) => s.id !== id);
+    this.saveAll();
+    return this.quickTaskSubmissionsCache.length < prevLen;
   }
 
   // =================== STATISTICS (Zero Mock Data) ===================

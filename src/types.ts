@@ -156,6 +156,37 @@ export interface ProjectUpdate {
   readByUserIds: string[];
 }
 
+export interface QuickTask {
+  id: string;
+  title: string;
+  description: string;
+  instructions: string;
+  submissionRequirements: string;
+  referenceLink?: string;
+  reward?: string;
+  status: 'active' | 'closed';
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type QuickTaskSubmissionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface QuickTaskSubmission {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  submittedUrl?: string;
+  submittedText?: string;
+  status: QuickTaskSubmissionStatus;
+  submittedAt: string;
+  adminFeedback?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
 export interface ContributorEarning {
   id: string;
   userId: string;

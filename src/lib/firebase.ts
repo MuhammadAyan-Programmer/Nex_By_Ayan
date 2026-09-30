@@ -17,6 +17,7 @@ import {
   getDoc,
   getDocFromServer,
   setDoc,
+  deleteDoc,
   collection,
   getDocs,
   onSnapshot,
@@ -25,7 +26,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import type { UserProfile, ProjectApplication, Project, MaintenanceConfig } from '../types';
+import type { UserProfile, ProjectApplication, Project, MaintenanceConfig, QuickTask, QuickTaskSubmission } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase safely
@@ -480,6 +481,214 @@ export async function fetchProjectsFromFirestore(): Promise<Project[]> {
     2500,
     []
   );
+}
+
+// --- Firestore Quick Tasks & Submissions Helpers ---
+
+/**
+ * Save quick task to Firebase Firestore
+ */
+export async function saveQuickTaskToFirestore(task: QuickTask): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
+  const path = `quick_tasks/${task.id}`;
+  return withTimeout(
+    (async () => {
+      try {
+        const taskDocRef = doc(db, 'quick_tasks', task.id);
+        await setDoc(taskDocRef, task, { merge: true });
+        return true;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+        return false;
+      }
+    })(),
+    2500,
+    false
+  );
+}
+
+/**
+ * Delete quick task from Firebase Firestore
+ */
+export async function deleteQuickTaskFromFirestore(taskId: string): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
+  const path = `quick_tasks/${taskId}`;
+  return withTimeout(
+    (async () => {
+      try {
+        const taskDocRef = doc(db, 'quick_tasks', taskId);
+        await deleteDoc(taskDocRef);
+        return true;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+        return false;
+      }
+    })(),
+    2500,
+    false
+  );
+}
+
+/**
+ * Fetch all quick tasks from Firebase Firestore
+ */
+export async function fetchQuickTasksFromFirestore(): Promise<QuickTask[]> {
+  if (isQuotaExhausted()) return [];
+  const path = 'quick_tasks';
+  return withTimeout(
+    (async () => {
+      try {
+        const col = collection(db, 'quick_tasks');
+        const snapshot = await getDocs(col);
+        const tasks: QuickTask[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as QuickTask;
+          if (data && data.id) {
+            tasks.push({
+              ...data,
+              id: data.id || d.id,
+            });
+          }
+        });
+        return tasks;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, path);
+        return [];
+      }
+    })(),
+    2500,
+    []
+  );
+}
+
+/**
+ * Subscribe to real-time quick tasks from Firebase Firestore
+ */
+export function subscribeToQuickTasksFirestore(
+  onUpdate: (tasks: QuickTask[]) => void,
+  onError?: (err: unknown) => void
+): () => void {
+  if (isQuotaExhausted()) return () => {};
+  const path = 'quick_tasks';
+  try {
+    const col = collection(db, 'quick_tasks');
+    return onSnapshot(
+      col,
+      (snapshot) => {
+        const tasks: QuickTask[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as QuickTask;
+          if (data && data.id) {
+            tasks.push({
+              ...data,
+              id: data.id || d.id,
+            });
+          }
+        });
+        onUpdate(tasks);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, path);
+        if (onError) onError(error);
+      }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return () => {};
+  }
+}
+
+/**
+ * Save quick task submission to Firebase Firestore
+ */
+export async function saveQuickTaskSubmissionToFirestore(
+  submission: QuickTaskSubmission
+): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
+  const path = `quick_task_submissions/${submission.id}`;
+  return withTimeout(
+    (async () => {
+      try {
+        const subDocRef = doc(db, 'quick_task_submissions', submission.id);
+        await setDoc(subDocRef, submission, { merge: true });
+        return true;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+        return false;
+      }
+    })(),
+    2500,
+    false
+  );
+}
+
+/**
+ * Fetch all quick task submissions from Firebase Firestore
+ */
+export async function fetchQuickTaskSubmissionsFromFirestore(): Promise<QuickTaskSubmission[]> {
+  if (isQuotaExhausted()) return [];
+  const path = 'quick_task_submissions';
+  return withTimeout(
+    (async () => {
+      try {
+        const col = collection(db, 'quick_task_submissions');
+        const snapshot = await getDocs(col);
+        const submissions: QuickTaskSubmission[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as QuickTaskSubmission;
+          if (data && data.id) {
+            submissions.push({
+              ...data,
+              id: data.id || d.id,
+            });
+          }
+        });
+        return submissions;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, path);
+        return [];
+      }
+    })(),
+    2500,
+    []
+  );
+}
+
+/**
+ * Subscribe to real-time quick task submissions from Firebase Firestore
+ */
+export function subscribeToQuickTaskSubmissionsFirestore(
+  onUpdate: (subs: QuickTaskSubmission[]) => void,
+  onError?: (err: unknown) => void
+): () => void {
+  if (isQuotaExhausted()) return () => {};
+  const path = 'quick_task_submissions';
+  try {
+    const col = collection(db, 'quick_task_submissions');
+    return onSnapshot(
+      col,
+      (snapshot) => {
+        const submissions: QuickTaskSubmission[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as QuickTaskSubmission;
+          if (data && data.id) {
+            submissions.push({
+              ...data,
+              id: data.id || d.id,
+            });
+          }
+        });
+        onUpdate(submissions);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, path);
+        if (onError) onError(error);
+      }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return () => {};
+  }
 }
 
 // --- Firestore System Maintenance Helpers ---
