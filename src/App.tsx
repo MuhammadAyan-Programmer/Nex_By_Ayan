@@ -29,10 +29,12 @@ import { AdminApplicationsView } from './components/admin/AdminApplicationsView'
 import { AdminApprovedContributorsView } from './components/admin/AdminApprovedContributorsView';
 import { AdminProjectUpdatesView } from './components/admin/AdminProjectUpdatesView';
 import { AdminPaymentsView } from './components/admin/AdminPaymentsView';
+import { AdminProjectPaymentRecordsView } from './components/admin/AdminProjectPaymentRecordsView';
 import { AdminUsersView } from './components/admin/AdminUsersView';
 import { AdminSettingsView } from './components/admin/AdminSettingsView';
 import { AdminMaintenanceView } from './components/admin/AdminMaintenanceView';
 import { MaintenancePage } from './components/common/MaintenancePage';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 const AppContent: React.FC = () => {
   const { currentUser, projects, logout, maintenanceState, toggleMaintenance } = useApp();
@@ -284,48 +286,51 @@ const AppContent: React.FC = () => {
               </div>
             )}
 
-            {adminTab === 'dashboard' && (
-              <AdminDashboardHome
-                onNavigate={setAdminTab}
-                onOpenCreateProject={() => setIsAdminCreateOpen(true)}
-              />
-            )}
-            {adminTab === 'users' && <AdminUsersView />}
-            {adminTab === 'projects' && (
-              <AdminProjectsView
-                onOpenCreateProject={() => setIsAdminCreateOpen(true)}
-                onViewContributorsForProject={(pId) => {
-                  setAdminProjectContributorsFilter(pId);
-                  setAdminTab('approved-contributors');
-                }}
-                onViewApplicationsForProject={(pId) => {
-                  setAdminProjectApplicationsFilter(pId);
-                  setAdminTab('applications');
-                }}
-              />
-            )}
-            {adminTab === 'quick-tasks' && <AdminQuickTasksView />}
-            {adminTab === 'applications' && (
-              <AdminApplicationsView initialProjectId={adminProjectApplicationsFilter} />
-            )}
-            {adminTab === 'approved-contributors' && (
-              <AdminApprovedContributorsView
-                initialProjectId={adminProjectContributorsFilter}
-                onCreditPaymentForUser={(uId, pId) => {
-                  setAdminCreditTarget({ userId: uId, projectId: pId });
-                  setAdminTab('payments');
-                }}
-              />
-            )}
-            {adminTab === 'project-updates' && <AdminProjectUpdatesView />}
-            {adminTab === 'payments' && (
-              <AdminPaymentsView
-                initialUserId={adminCreditTarget?.userId}
-                initialProjectId={adminCreditTarget?.projectId}
-              />
-            )}
-            {adminTab === 'maintenance' && <AdminMaintenanceView />}
-            {adminTab === 'settings' && <AdminSettingsView onNavigateToMaintenance={() => setAdminTab('maintenance')} />}
+            <ErrorBoundary fallbackTitle="Admin Panel Section Notice">
+              {adminTab === 'dashboard' && (
+                <AdminDashboardHome
+                  onNavigate={setAdminTab}
+                  onOpenCreateProject={() => setIsAdminCreateOpen(true)}
+                />
+              )}
+              {adminTab === 'users' && <AdminUsersView />}
+              {adminTab === 'projects' && (
+                <AdminProjectsView
+                  onOpenCreateProject={() => setIsAdminCreateOpen(true)}
+                  onViewContributorsForProject={(pId) => {
+                    setAdminProjectContributorsFilter(pId);
+                    setAdminTab('approved-contributors');
+                  }}
+                  onViewApplicationsForProject={(pId) => {
+                    setAdminProjectApplicationsFilter(pId);
+                    setAdminTab('applications');
+                  }}
+                />
+              )}
+              {adminTab === 'quick-tasks' && <AdminQuickTasksView />}
+              {adminTab === 'applications' && (
+                <AdminApplicationsView initialProjectId={adminProjectApplicationsFilter} />
+              )}
+              {adminTab === 'approved-contributors' && (
+                <AdminApprovedContributorsView
+                  initialProjectId={adminProjectContributorsFilter}
+                  onCreditPaymentForUser={(uId, pId) => {
+                    setAdminCreditTarget({ userId: uId, projectId: pId });
+                    setAdminTab('payments');
+                  }}
+                />
+              )}
+              {adminTab === 'project-updates' && <AdminProjectUpdatesView />}
+              {adminTab === 'payments' && (
+                <AdminPaymentsView
+                  initialUserId={adminCreditTarget?.userId}
+                  initialProjectId={adminCreditTarget?.projectId}
+                />
+              )}
+              {adminTab === 'project-payment-records' && <AdminProjectPaymentRecordsView />}
+              {adminTab === 'maintenance' && <AdminMaintenanceView />}
+              {adminTab === 'settings' && <AdminSettingsView onNavigateToMaintenance={() => setAdminTab('maintenance')} />}
+            </ErrorBoundary>
           </div>
         </main>
 
@@ -532,8 +537,10 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ErrorBoundary fallbackTitle="Nexora Workforce Application Notice">
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

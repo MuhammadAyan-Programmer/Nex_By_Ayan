@@ -16,6 +16,7 @@ import type {
   StoredProjectUpdate,
   StoredQuickTask,
   StoredQuickTaskSubmission,
+  StoredProjectPaymentRecord,
 } from './server/db.ts';
 import {
   sendVerificationEmail,
@@ -1134,6 +1135,149 @@ apiRouter.delete('/quick-task-submissions/:id', async (req: Request, res: Respon
       return res.status(404).json({ success: false, message: 'Submission not found.' });
     }
     res.json({ success: true, message: 'Submission deleted.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// =================== PROJECT PAYMENT RECORDS (ADMIN NOTEBOOK) API ===================
+
+// GET /api/project-payment-records - List all manual project payment records
+apiRouter.get('/project-payment-records', async (_req: Request, res: Response) => {
+  try {
+    const records = await db.getProjectPaymentRecords();
+    res.json({ success: true, records });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/project-payment-records/:id - Get single record
+apiRouter.get('/project-payment-records/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const record = await db.getProjectPaymentRecordById(id);
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Project payment record not found.' });
+    }
+    res.json({ success: true, record });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/project-payment-records - Create a new project payment record
+apiRouter.post('/project-payment-records', async (req: Request, res: Response) => {
+  try {
+    const {
+      id,
+      projectName,
+      projectBatch,
+      totalTasksSubmitted,
+      totalApprovedTasks,
+      totalPaymentDistributed,
+      paymentDate,
+      additionalNotes,
+      createdBy,
+    } = req.body || {};
+
+    if (!projectName || !String(projectName).trim()) {
+      return res.status(400).json({ success: false, message: 'Project name is required.' });
+    }
+    if (!projectBatch || !String(projectBatch).trim()) {
+      return res.status(400).json({ success: false, message: 'Project batch is required.' });
+    }
+    if (totalTasksSubmitted === undefined || isNaN(Number(totalTasksSubmitted))) {
+      return res.status(400).json({ success: false, message: 'Total tasks submitted must be a valid number.' });
+    }
+    if (totalPaymentDistributed === undefined || isNaN(Number(totalPaymentDistributed))) {
+      return res.status(400).json({ success: false, message: 'Total payment distributed must be a valid number.' });
+    }
+    if (!paymentDate || !String(paymentDate).trim()) {
+      return res.status(400).json({ success: false, message: 'Payment date is required.' });
+    }
+
+    const created = await db.createProjectPaymentRecord({
+      id,
+      projectName: String(projectName).trim(),
+      projectBatch: String(projectBatch).trim(),
+      totalTasksSubmitted: Math.max(0, Math.floor(Number(totalTasksSubmitted))),
+      totalApprovedTasks:
+        totalApprovedTasks !== undefined && totalApprovedTasks !== '' && !isNaN(Number(totalApprovedTasks))
+          ? Math.max(0, Math.floor(Number(totalApprovedTasks)))
+          : undefined,
+      totalPaymentDistributed: Math.max(0, Number(totalPaymentDistributed)),
+      paymentDate: String(paymentDate).trim(),
+      additionalNotes: additionalNotes ? String(additionalNotes).trim() : undefined,
+      createdBy: createdBy || 'admin',
+    });
+
+    res.json({
+      success: true,
+      record: created,
+      message: 'Project payment record saved successfully.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /api/project-payment-records/:id - Update an existing project payment record
+apiRouter.put('/project-payment-records/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      projectName,
+      projectBatch,
+      totalTasksSubmitted,
+      totalApprovedTasks,
+      totalPaymentDistributed,
+      paymentDate,
+      additionalNotes,
+    } = req.body || {};
+
+    const updates: Partial<StoredProjectPaymentRecord> = {};
+    if (projectName !== undefined) updates.projectName = String(projectName).trim();
+    if (projectBatch !== undefined) updates.projectBatch = String(projectBatch).trim();
+    if (totalTasksSubmitted !== undefined) {
+      updates.totalTasksSubmitted = Math.max(0, Math.floor(Number(totalTasksSubmitted)));
+    }
+    if (totalApprovedTasks !== undefined) {
+      updates.totalApprovedTasks =
+        totalApprovedTasks !== '' && !isNaN(Number(totalApprovedTasks))
+          ? Math.max(0, Math.floor(Number(totalApprovedTasks)))
+          : undefined;
+    }
+    if (totalPaymentDistributed !== undefined) {
+      updates.totalPaymentDistributed = Math.max(0, Number(totalPaymentDistributed));
+    }
+    if (paymentDate !== undefined) updates.paymentDate = String(paymentDate).trim();
+    if (additionalNotes !== undefined) updates.additionalNotes = String(additionalNotes).trim();
+
+    const updated = await db.updateProjectPaymentRecord(id, updates);
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Project payment record not found.' });
+    }
+
+    res.json({
+      success: true,
+      record: updated,
+      message: 'Project payment record updated successfully.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/project-payment-records/:id - Delete a project payment record
+apiRouter.delete('/project-payment-records/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await db.deleteProjectPaymentRecord(id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Project payment record not found.' });
+    }
+    res.json({ success: true, message: 'Project payment record deleted successfully.' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

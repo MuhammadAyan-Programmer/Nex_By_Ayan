@@ -1,0 +1,13 @@
+[
+  {
+    "id": "task-quick-001",
+    "title": "Share Nexora Workforce on LinkedIn",
+    "description": "Create a short public post on LinkedIn introducing Nexora Workforce and submit your post link.",
+    "instructions": "1. Log into your LinkedIn account.\n2. Write a short, professional post introducing Nexora Workforce to your network (mentioning our platform at https://nexora.work).\n3. Publish the post with visibility set to Public.\n4. Copy the URL of your published post and paste it into the submission link field below.",
+    "submissionRequirements": "Provide the direct URL of your public LinkedIn post. Optionally include any additional notes in the text field.",
+    "referenceLink": "https://www.linkedin.com",
+    "reward": "$5.00",
+    "status": "active",
+    "createdAt": "2026-09-20T10:00:00.000Z"
+  }
+]

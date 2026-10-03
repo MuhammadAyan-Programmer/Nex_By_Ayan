@@ -13,6 +13,7 @@ import {
   UserCheck,
   Wrench,
   Zap,
+  BookOpen,
 } from 'lucide-react';
 import { LogoIcon } from '../common/Logo';
 
@@ -25,6 +26,7 @@ export type AdminTab =
   | 'approved-contributors'
   | 'project-updates'
   | 'payments'
+  | 'project-payment-records'
   | 'maintenance'
   | 'settings';
 
@@ -85,6 +87,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       label: 'Payments & Withdrawals',
       icon: Wallet,
       badge: pendingWithdrawals > 0 ? pendingWithdrawals : undefined,
+    },
+    {
+      id: 'project-payment-records',
+      label: 'Project Payment Records',
+      icon: BookOpen,
     },
     {
       id: 'maintenance',

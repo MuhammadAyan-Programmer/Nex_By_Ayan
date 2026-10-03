@@ -119,6 +119,23 @@
         "adminFeedback": { "type": "string", "description": "Review notes or feedback from admin" }
       },
       "required": ["id", "taskId", "userId", "userName", "userEmail", "status", "submittedAt"]
+    },
+    "ProjectPaymentRecord": {
+      "title": "ProjectPaymentRecord",
+      "description": "Admin notebook manual project and batch payment records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Record ID" },
+        "projectName": { "type": "string", "description": "Project title" },
+        "projectBatch": { "type": "string", "description": "Batch name or number" },
+        "totalTasksSubmitted": { "type": "number", "description": "Total tasks submitted" },
+        "totalApprovedTasks": { "type": "number", "description": "Total approved tasks count" },
+        "totalPaymentDistributed": { "type": "number", "description": "Total USD payment distributed" },
+        "paymentDate": { "type": "string", "description": "Date of payment distribution (YYYY-MM-DD)" },
+        "additionalNotes": { "type": "string", "description": "Extra administrative notes" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["id", "projectName", "projectBatch", "totalTasksSubmitted", "totalPaymentDistributed", "paymentDate", "createdAt"]
     }
   },
   "firestore": {
@@ -141,6 +158,10 @@
     "/quick_task_submissions/{submissionId}": {
       "schema": "#/entities/QuickTaskSubmission",
       "description": "Contributor submissions for quick tasks"
+    },
+    "/project_payment_records/{recordId}": {
+      "schema": "#/entities/ProjectPaymentRecord",
+      "description": "Admin-only manual project payment history records"
     },
     "/system/{docId}": {
       "schema": "#/entities/SystemConfig",

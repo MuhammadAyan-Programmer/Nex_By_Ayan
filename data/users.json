@@ -26,7 +26,8 @@
     "createdAt": "2026-09-18",
     "verificationToken": "0a13654c7995c38b7c0ee02b6435236dc5d0ea6617a73bf9",
     "verificationTokenExpiresAt": 1789710588061,
-    "requiresEmailVerification": true
+    "requiresEmailVerification": true,
+    "approvalStatus": "approved"
   },
   {
     "id": "usr-15323",
@@ -54,7 +55,8 @@
     "createdAt": "2026-09-18",
     "verificationToken": "e3b63d1b297b0b1c2214b19ed6d64a0209793811da41d4d3",
     "verificationTokenExpiresAt": 1789710037996,
-    "requiresEmailVerification": true
+    "requiresEmailVerification": true,
+    "approvalStatus": "approved"
   },
   {
     "id": "usr-69423",
@@ -80,7 +82,8 @@
     "avatar": "SC",
     "status": "active",
     "createdAt": "2026-09-18",
-    "requiresEmailVerification": false
+    "requiresEmailVerification": false,
+    "approvalStatus": "approved"
   },
   {
     "id": "usr-08300",
@@ -108,7 +111,8 @@
     "createdAt": "2026-09-18",
     "verificationToken": "219873dd32dc494b49e6ce46cbb2273bf16b80870a2dc50f",
     "verificationTokenExpiresAt": 1789707708300,
-    "requiresEmailVerification": true
+    "requiresEmailVerification": true,
+    "approvalStatus": "approved"
   },
   {
     "id": "usr-80650",
@@ -136,7 +140,8 @@
     "createdAt": "2026-09-11",
     "verificationToken": "ad06f47f1983586847f0d1bbf5a6e8b20d30c1ccd0ff618f",
     "verificationTokenExpiresAt": 1789111680650,
-    "requiresEmailVerification": true
+    "requiresEmailVerification": true,
+    "approvalStatus": "approved"
   },
   {
     "id": "usr-18797",
@@ -161,7 +166,8 @@
     "profileStatus": "Complete",
     "avatar": "MA",
     "status": "active",
-    "createdAt": "2026-09-10"
+    "createdAt": "2026-09-10",
+    "approvalStatus": "approved"
   },
   {
     "id": "usr-13269",
@@ -186,7 +192,8 @@
     "profileStatus": "Incomplete",
     "avatar": "AM",
     "status": "active",
-    "createdAt": "2026-09-09"
+    "createdAt": "2026-09-09",
+    "approvalStatus": "approved"
   },
   {
     "id": "usr-62223",
@@ -211,7 +218,8 @@
     "profileStatus": "Incomplete",
     "avatar": "TM",
     "status": "active",
-    "createdAt": "2026-09-09"
+    "createdAt": "2026-09-09",
+    "approvalStatus": "approved"
   },
   {
     "id": "admin-001",
@@ -239,6 +247,7 @@
     ],
     "experience": "Platform Administrator & Operations Director at Nexora Workforce",
     "status": "active",
-    "createdAt": "2026-09-01"
+    "createdAt": "2026-09-01",
+    "approvalStatus": "approved"
   }
 ]

@@ -120,7 +120,11 @@ export const MyApplicationsView: React.FC<MyApplicationsViewProps> = ({ onNaviga
                       {app.projectCategory}
                     </td>
                     <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">
-                      {app.languages.join(', ')}
+                      {Array.isArray(app.languages) && app.languages.length > 0
+                        ? app.languages.join(', ')
+                        : typeof app.languages === 'string'
+                        ? app.languages
+                        : 'Arabic, English'}
                     </td>
                     <td className="px-4 py-3.5 text-slate-500 whitespace-nowrap">{app.appliedDate}</td>
                     <td className="px-4 py-3.5 whitespace-nowrap">{getStatusBadge(app.status)}</td>

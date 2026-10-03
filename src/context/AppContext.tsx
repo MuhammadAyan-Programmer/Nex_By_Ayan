@@ -16,6 +16,7 @@ import {
   QuickTask,
   QuickTaskSubmission,
   QuickTaskSubmissionStatus,
+  ProjectPaymentRecord,
 } from '../types';
 import {
   INITIAL_PROJECTS,
@@ -46,6 +47,10 @@ import {
   saveMaintenanceToFirestore,
   fetchMaintenanceFromFirestore,
   subscribeToMaintenanceFirestore,
+  saveProjectPaymentRecordToFirestore,
+  deleteProjectPaymentRecordFromFirestore,
+  fetchProjectPaymentRecordsFromFirestore,
+  subscribeToProjectPaymentRecordsFirestore,
   isQuotaExhausted,
   auth,
   firebaseSignUpAndSendVerification,
@@ -192,6 +197,18 @@ interface AppContextType {
     status: QuickTaskSubmissionStatus,
     adminFeedback?: string
   ) => Promise<{ success: boolean; message: string }>;
+
+  // Project Payment Records (Admin Notebook)
+  projectPaymentRecords: ProjectPaymentRecord[];
+  createProjectPaymentRecord: (
+    record: Omit<ProjectPaymentRecord, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
+  ) => Promise<{ success: boolean; record?: ProjectPaymentRecord; message?: string }>;
+  updateProjectPaymentRecord: (
+    id: string,
+    updates: Partial<ProjectPaymentRecord>
+  ) => Promise<{ success: boolean; record?: ProjectPaymentRecord; message?: string }>;
+  deleteProjectPaymentRecord: (id: string) => Promise<{ success: boolean; message?: string }>;
+  refreshProjectPaymentRecords: () => Promise<void>;
 
   // System & Settings
   resetToDefaults: () => void;
@@ -406,11 +423,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const [quickTasks, setQuickTasks] = useState<QuickTask[]>(() => {
-    const stored = loadStorage<QuickTask[]>('quickTasks', [DEFAULT_INITIAL_QUICK_TASK]);
-    return stored.length > 0 ? stored : [DEFAULT_INITIAL_QUICK_TASK];
+    try {
+      const isInitialized = typeof window !== 'undefined' ? localStorage.getItem('nexora_quickTasks_initialized') : null;
+      const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
+      if (isInitialized) {
+        const stored = loadStorage<QuickTask[]>('quickTasks', []);
+        return stored.filter((t) => !deletedIds.has(t.id));
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('nexora_quickTasks_initialized', 'true');
+      }
+      const initial = [DEFAULT_INITIAL_QUICK_TASK].filter((t) => !deletedIds.has(t.id));
+      saveStorage('quickTasks', initial);
+      return initial;
+    } catch {
+      return [DEFAULT_INITIAL_QUICK_TASK];
+    }
   });
   const [quickTaskSubmissions, setQuickTaskSubmissions] = useState<QuickTaskSubmission[]>(() =>
     loadStorage<QuickTaskSubmission[]>('quickTaskSubmissions', [])
+  );
+  const [projectPaymentRecords, setProjectPaymentRecords] = useState<ProjectPaymentRecord[]>(() =>
+    loadStorage<ProjectPaymentRecord[]>('projectPaymentRecords', [])
   );
 
   // Sync to storage on change
@@ -425,6 +459,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveStorage('notifications', notifications), [notifications]);
   useEffect(() => saveStorage('quickTasks', quickTasks), [quickTasks]);
   useEffect(() => saveStorage('quickTaskSubmissions', quickTaskSubmissions), [quickTaskSubmissions]);
+  useEffect(() => saveStorage('projectPaymentRecords', projectPaymentRecords), [projectPaymentRecords]);
 
   // Real-time synchronization: keep project approved seats and capacity status synchronized with approved applications
   useEffect(() => {
@@ -470,6 +505,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setQuickTasks(JSON.parse(e.newValue));
         } else if (e.key === 'nexora_quickTaskSubmissions') {
           setQuickTaskSubmissions(JSON.parse(e.newValue));
+        } else if (e.key === 'nexora_projectPaymentRecords') {
+          setProjectPaymentRecords(JSON.parse(e.newValue));
         }
       } catch (err) {
         console.warn('Storage sync parse error:', err);
@@ -492,12 +529,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsSyncing(true);
 
       // Phase 1: FAST, sub-50ms fetch from central backend Express server
-      const [projRes, appRes, userRes, qtaskRes, qsubRes] = await Promise.all([
+      const [projRes, appRes, userRes, qtaskRes, qsubRes, precRes] = await Promise.all([
         fetch(`${API_BASE}/api/projects`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/applications`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/users`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/quick-tasks`).then((r) => r.json()).catch(() => null),
         fetch(`${API_BASE}/api/quick-task-submissions`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/api/project-payment-records`).then((r) => r.json()).catch(() => null),
       ]);
 
       setSyncError(null);
@@ -512,15 +550,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Apply Quick Tasks immediately
-      if (qtaskRes?.success && Array.isArray(qtaskRes.tasks) && qtaskRes.tasks.length > 0) {
-        setQuickTasks(qtaskRes.tasks);
-        saveStorage('quickTasks', qtaskRes.tasks);
+      if (qtaskRes?.success && Array.isArray(qtaskRes.tasks)) {
+        const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
+        const filteredTasks = qtaskRes.tasks.filter((t: QuickTask) => !deletedIds.has(t.id));
+        setQuickTasks(filteredTasks);
+        saveStorage('quickTasks', filteredTasks);
       }
 
       // Apply Quick Task Submissions immediately
       if (qsubRes?.success && Array.isArray(qsubRes.submissions)) {
         setQuickTaskSubmissions(qsubRes.submissions);
         saveStorage('quickTaskSubmissions', qsubRes.submissions);
+      }
+
+      // Apply Project Payment Records immediately
+      if (precRes?.success && Array.isArray(precRes.records)) {
+        setProjectPaymentRecords(precRes.records);
+        saveStorage('projectPaymentRecords', precRes.records);
       }
 
       // Apply Applications immediately
@@ -607,15 +653,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               setProjects(fbProjects);
             }
 
-            if (fbQuickTasks && fbQuickTasks.length > 0) {
-              setQuickTasks((prev) => {
-                const map = new Map<string, QuickTask>();
-                for (const t of prev) map.set(t.id, t);
-                for (const t of fbQuickTasks) map.set(t.id, t);
-                const merged = Array.from(map.values());
-                saveStorage('quickTasks', merged);
-                return merged;
-              });
+            if (fbQuickTasks && Array.isArray(fbQuickTasks)) {
+              const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
+              const filteredTasks = fbQuickTasks.filter((t) => !deletedIds.has(t.id));
+              setQuickTasks(filteredTasks);
+              saveStorage('quickTasks', filteredTasks);
             }
 
             if (fbQuickSubs && fbQuickSubs.length > 0) {
@@ -750,15 +792,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 3. Firebase Firestore Real-Time Listener for Quick Tasks
     const unsubscribeQuickTasks = subscribeToQuickTasksFirestore(
       (fbTasks) => {
-        if (fbTasks && fbTasks.length > 0) {
-          setQuickTasks((prev) => {
-            const map = new Map<string, QuickTask>();
-            for (const t of prev) map.set(t.id, t);
-            for (const t of fbTasks) map.set(t.id, t);
-            const merged = Array.from(map.values());
-            saveStorage('quickTasks', merged);
-            return merged;
-          });
+        if (fbTasks && Array.isArray(fbTasks)) {
+          const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
+          const filteredTasks = fbTasks.filter((t) => !deletedIds.has(t.id));
+          setQuickTasks(filteredTasks);
+          saveStorage('quickTasks', filteredTasks);
         }
       },
       (err) => {
@@ -785,6 +823,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     );
 
+    // 5. Firebase Firestore Real-Time Listener for Project Payment Records (Admin Notebook)
+    const unsubscribePaymentRecords = subscribeToProjectPaymentRecordsFirestore(
+      (fbRecords) => {
+        if (fbRecords && fbRecords.length > 0) {
+          setProjectPaymentRecords((prev) => {
+            const map = new Map<string, ProjectPaymentRecord>();
+            for (const r of prev) map.set(r.id, r);
+            for (const r of fbRecords) map.set(r.id, r);
+            const merged = Array.from(map.values()).sort((a, b) => {
+              const d = (b.paymentDate || '').localeCompare(a.paymentDate || '');
+              if (d !== 0) return d;
+              return (b.createdAt || '').localeCompare(a.createdAt || '');
+            });
+            saveStorage('projectPaymentRecords', merged);
+            return merged;
+          });
+        }
+      },
+      (err) => {
+        console.warn('Firestore project payment records subscription notice:', err);
+      }
+    );
+
     // Periodic polling as secondary fallback (every 60s)
     const pollInterval = setInterval(() => {
       refreshLiveServerData();
@@ -800,6 +861,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubscribeApps();
       unsubscribeQuickTasks();
       unsubscribeQuickSubs();
+      unsubscribePaymentRecords();
       clearInterval(pollInterval);
       window.removeEventListener('focus', handleFocus);
     };
@@ -1856,6 +1918,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status,
       notes: notes !== undefined ? notes : targetApp.notes,
       reviewedDate: new Date().toISOString().split('T')[0],
+      languages: Array.isArray(targetApp.languages)
+        ? targetApp.languages
+        : typeof targetApp.languages === 'string'
+        ? [targetApp.languages]
+        : ['Arabic', 'English'],
+      skills: Array.isArray(targetApp.skills)
+        ? targetApp.skills
+        : typeof targetApp.skills === 'string'
+        ? [targetApp.skills]
+        : ['Translation & Localization'],
     };
 
     setApplications((prev) => {
@@ -1880,17 +1952,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           userName: updatedApp.userName,
           projectId: updatedApp.projectId,
           projectName: updatedApp.projectName,
+          languages: updatedApp.languages,
+          skills: updatedApp.skills,
         }),
       });
-      const resData = await res.json();
-      if (resData.success) {
-        if (resData.application) {
-          setApplications((prev) =>
-            prev.map((app) => (app.id === id ? resData.application : app))
-          );
-        }
-        if (Array.isArray(resData.projects)) {
-          setProjects(resData.projects);
+      if (res.ok) {
+        const resData = await res.json();
+        if (resData.success) {
+          if (resData.application) {
+            const sanitizedApp: ProjectApplication = {
+              ...resData.application,
+              languages: Array.isArray(resData.application.languages)
+                ? resData.application.languages
+                : typeof resData.application.languages === 'string'
+                ? [resData.application.languages]
+                : updatedApp.languages,
+              skills: Array.isArray(resData.application.skills)
+                ? resData.application.skills
+                : typeof resData.application.skills === 'string'
+                ? [resData.application.skills]
+                : updatedApp.skills,
+            };
+            setApplications((prev) =>
+              prev.map((app) => (app.id === id ? sanitizedApp : app))
+            );
+          }
+          if (Array.isArray(resData.projects)) {
+            setProjects(resData.projects);
+          }
         }
       }
     } catch (err) {
@@ -1901,8 +1990,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setProjects((prev) =>
         prev.map((p) => {
           if (p.id === targetApp.projectId) {
-            const approved = p.approvedContributors + 1;
-            const isFull = approved >= p.requiredContributors;
+            const curApproved = Number(p.approvedContributors) || 0;
+            const approved = curApproved + 1;
+            const required = Number(p.requiredContributors) || 10;
+            const isFull = approved >= required;
             return {
               ...p,
               approvedContributors: approved,
@@ -1914,11 +2005,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     } else if (prevStatus === 'Approved' && status !== 'Approved') {
       setProjects((prev) =>
-        prev.map((p) =>
-          p.id === targetApp.projectId
-            ? { ...p, approvedContributors: Math.max(0, p.approvedContributors - 1) }
-            : p
-        )
+        prev.map((p) => {
+          if (p.id === targetApp.projectId) {
+            const curApproved = Number(p.approvedContributors) || 0;
+            return {
+              ...p,
+              approvedContributors: Math.max(0, curApproved - 1),
+            };
+          }
+          return p;
+        })
       );
     }
 
@@ -2264,15 +2360,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedTask = updated;
       const next = [...prev];
       next[idx] = updated;
+      saveStorage('quickTasks', next);
       return next;
     });
 
     if (updatedTask) {
-      fetch(`${API_BASE}/api/quick-tasks/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).catch(() => {});
+      try {
+        await fetch(`${API_BASE}/api/quick-tasks/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+      } catch (err) {
+        console.warn('Update quick task network notice:', err);
+      }
 
       saveQuickTaskToFirestore(updatedTask).catch(() => {});
     }
@@ -2281,11 +2382,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteQuickTask = async (id: string): Promise<boolean> => {
-    setQuickTasks((prev) => prev.filter((t) => t.id !== id));
+    // Record in persistent deleted set so it can never reappear
+    try {
+      const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
+      deletedIds.add(id);
+      saveStorage('deletedQuickTaskIds', Array.from(deletedIds));
+    } catch {}
 
-    fetch(`${API_BASE}/api/quick-tasks/${id}`, {
-      method: 'DELETE',
-    }).catch(() => {});
+    setQuickTasks((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      saveStorage('quickTasks', next);
+      return next;
+    });
+
+    try {
+      await fetch(`${API_BASE}/api/quick-tasks/${id}`, {
+        method: 'DELETE',
+      });
+    } catch (err) {
+      console.warn('Delete quick task server notice:', err);
+    }
 
     deleteQuickTaskFromFirestore(id).catch(() => {});
 
@@ -2304,11 +2420,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Please sign in to submit a quick task.' };
     }
 
+    const task = quickTasks.find((t) => t.id === data.taskId);
+    if (task && task.status === 'closed') {
+      return {
+        success: false,
+        message: 'This task is currently Closed. Submissions are no longer accepted.',
+      };
+    }
+
     if (!data.submittedUrl && !data.submittedText) {
       return { success: false, message: 'Please provide either a submission URL or text response.' };
     }
 
-    const task = quickTasks.find((t) => t.id === data.taskId);
     const resolvedTitle = data.taskTitle || task?.title || 'Quick Task';
 
     const newSubmission: QuickTaskSubmission = {
@@ -2419,6 +2542,139 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       success: true,
       message: `Submission marked as ${status}.`,
     };
+  };
+
+  // =================== PROJECT PAYMENT RECORDS (ADMIN NOTEBOOK) ===================
+
+  const createProjectPaymentRecord = async (
+    data: Omit<ProjectPaymentRecord, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
+  ): Promise<{ success: boolean; record?: ProjectPaymentRecord; message?: string }> => {
+    const newRecord: ProjectPaymentRecord = {
+      ...data,
+      id: data.id || `prec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: data.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: currentUser?.email || 'admin',
+    };
+
+    setProjectPaymentRecords((prev) => {
+      const filtered = prev.filter((r) => r.id !== newRecord.id);
+      const next = [newRecord, ...filtered].sort((a, b) => {
+        const d = (b.paymentDate || '').localeCompare(a.paymentDate || '');
+        if (d !== 0) return d;
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      });
+      saveStorage('projectPaymentRecords', next);
+      return next;
+    });
+
+    // Save to Firestore asynchronously
+    saveProjectPaymentRecordToFirestore(newRecord).catch(() => {});
+
+    // Save to Server REST API
+    try {
+      await fetch(`${API_BASE}/api/project-payment-records`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRecord),
+      });
+    } catch (e) {
+      console.warn('Failed to save project payment record to API:', e);
+    }
+
+    return {
+      success: true,
+      record: newRecord,
+      message: 'Project payment record saved successfully.',
+    };
+  };
+
+  const updateProjectPaymentRecord = async (
+    id: string,
+    updates: Partial<ProjectPaymentRecord>
+  ): Promise<{ success: boolean; record?: ProjectPaymentRecord; message?: string }> => {
+    let updatedRecord: ProjectPaymentRecord | null = null;
+
+    setProjectPaymentRecords((prev) => {
+      const idx = prev.findIndex((r) => r.id === id);
+      if (idx === -1) return prev;
+      const updated: ProjectPaymentRecord = {
+        ...prev[idx],
+        ...updates,
+        id,
+        createdAt: prev[idx].createdAt,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedRecord = updated;
+      const next = [...prev];
+      next[idx] = updated;
+      next.sort((a, b) => {
+        const d = (b.paymentDate || '').localeCompare(a.paymentDate || '');
+        if (d !== 0) return d;
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      });
+      saveStorage('projectPaymentRecords', next);
+      return next;
+    });
+
+    if (updatedRecord) {
+      saveProjectPaymentRecordToFirestore(updatedRecord).catch(() => {});
+      try {
+        await fetch(`${API_BASE}/api/project-payment-records/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates),
+        });
+      } catch (e) {
+        console.warn('Failed to update project payment record on API:', e);
+      }
+      return {
+        success: true,
+        record: updatedRecord,
+        message: 'Project payment record updated successfully.',
+      };
+    }
+
+    return { success: false, message: 'Record not found' };
+  };
+
+  const deleteProjectPaymentRecord = async (id: string): Promise<{ success: boolean; message?: string }> => {
+    setProjectPaymentRecords((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      saveStorage('projectPaymentRecords', next);
+      return next;
+    });
+
+    deleteProjectPaymentRecordFromFirestore(id).catch(() => {});
+    try {
+      await fetch(`${API_BASE}/api/project-payment-records/${id}`, {
+        method: 'DELETE',
+      });
+    } catch (e) {
+      console.warn('Failed to delete project payment record on API:', e);
+    }
+
+    return { success: true, message: 'Project payment record deleted successfully.' };
+  };
+
+  const refreshProjectPaymentRecords = async (): Promise<void> => {
+    try {
+      const res = await fetch(`${API_BASE}/api/project-payment-records`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.records)) {
+          setProjectPaymentRecords(data.records);
+          saveStorage('projectPaymentRecords', data.records);
+          return;
+        }
+      }
+    } catch {}
+
+    const fsRecords = await fetchProjectPaymentRecordsFromFirestore();
+    if (fsRecords.length > 0) {
+      setProjectPaymentRecords(fsRecords);
+      saveStorage('projectPaymentRecords', fsRecords);
+    }
   };
 
   const resetToDefaults = () => {
@@ -2704,6 +2960,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         quickTaskSubmissions,
         submitQuickTask,
         updateQuickTaskSubmissionStatus,
+
+        projectPaymentRecords,
+        createProjectPaymentRecord,
+        updateProjectPaymentRecord,
+        deleteProjectPaymentRecord,
+        refreshProjectPaymentRecords,
 
         resetToDefaults,
 

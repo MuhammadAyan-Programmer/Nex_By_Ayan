@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Wrench,
   Zap,
+  BookOpen,
 } from 'lucide-react';
 
 interface AdminDashboardHomeProps {
@@ -358,6 +359,14 @@ export const AdminDashboardHome: React.FC<AdminDashboardHomeProps> = ({
           >
             <Wallet className="w-3.5 h-3.5" />
             Review Withdrawals ({pendingWithdrawalCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('project-payment-records')}
+            className="px-3.5 py-2 text-xs font-semibold bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors flex items-center gap-1.5"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            Project Payment Records
           </button>
         </div>
       </div>

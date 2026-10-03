@@ -187,6 +187,20 @@ export interface QuickTaskSubmission {
   reviewedBy?: string;
 }
 
+export interface ProjectPaymentRecord {
+  id: string;
+  projectName: string;
+  projectBatch: string;
+  totalTasksSubmitted: number;
+  totalApprovedTasks?: number;
+  totalPaymentDistributed: number;
+  paymentDate: string; // YYYY-MM-DD
+  additionalNotes?: string;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
 export interface ContributorEarning {
   id: string;
   userId: string;

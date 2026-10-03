@@ -26,7 +26,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import type { UserProfile, ProjectApplication, Project, MaintenanceConfig, QuickTask, QuickTaskSubmission } from '../types';
+import type { UserProfile, ProjectApplication, Project, MaintenanceConfig, QuickTask, QuickTaskSubmission, ProjectPaymentRecord } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase safely
@@ -679,6 +679,121 @@ export function subscribeToQuickTaskSubmissionsFirestore(
           }
         });
         onUpdate(submissions);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, path);
+        if (onError) onError(error);
+      }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return () => {};
+  }
+}
+
+// --- Firestore Project Payment Records Helpers (Admin Notebook) ---
+
+/**
+ * Save project payment record to Firebase Firestore
+ */
+export async function saveProjectPaymentRecordToFirestore(record: ProjectPaymentRecord): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
+  const path = `project_payment_records/${record.id}`;
+  return withTimeout(
+    (async () => {
+      try {
+        const docRef = doc(db, 'project_payment_records', record.id);
+        await setDoc(docRef, record, { merge: true });
+        return true;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+        return false;
+      }
+    })(),
+    2500,
+    false
+  );
+}
+
+/**
+ * Delete project payment record from Firebase Firestore
+ */
+export async function deleteProjectPaymentRecordFromFirestore(recordId: string): Promise<boolean> {
+  if (isQuotaExhausted()) return false;
+  const path = `project_payment_records/${recordId}`;
+  return withTimeout(
+    (async () => {
+      try {
+        const docRef = doc(db, 'project_payment_records', recordId);
+        await deleteDoc(docRef);
+        return true;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+        return false;
+      }
+    })(),
+    2500,
+    false
+  );
+}
+
+/**
+ * Fetch all project payment records from Firebase Firestore
+ */
+export async function fetchProjectPaymentRecordsFromFirestore(): Promise<ProjectPaymentRecord[]> {
+  if (isQuotaExhausted()) return [];
+  const path = 'project_payment_records';
+  return withTimeout(
+    (async () => {
+      try {
+        const col = collection(db, 'project_payment_records');
+        const snapshot = await getDocs(col);
+        const records: ProjectPaymentRecord[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as ProjectPaymentRecord;
+          if (data && data.id) {
+            records.push({
+              ...data,
+              id: data.id || d.id,
+            });
+          }
+        });
+        return records;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, path);
+        return [];
+      }
+    })(),
+    2500,
+    []
+  );
+}
+
+/**
+ * Subscribe to real-time project payment records from Firebase Firestore
+ */
+export function subscribeToProjectPaymentRecordsFirestore(
+  onUpdate: (records: ProjectPaymentRecord[]) => void,
+  onError?: (err: unknown) => void
+): () => void {
+  if (isQuotaExhausted()) return () => {};
+  const path = 'project_payment_records';
+  try {
+    const col = collection(db, 'project_payment_records');
+    return onSnapshot(
+      col,
+      (snapshot) => {
+        const records: ProjectPaymentRecord[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data() as ProjectPaymentRecord;
+          if (data && data.id) {
+            records.push({
+              ...data,
+              id: data.id || d.id,
+            });
+          }
+        });
+        onUpdate(records);
       },
       (error) => {
         handleFirestoreError(error, OperationType.LIST, path);

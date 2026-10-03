@@ -130,6 +130,20 @@ export interface StoredQuickTaskSubmission {
   reviewedBy?: string;
 }
 
+export interface StoredProjectPaymentRecord {
+  id: string;
+  projectName: string;
+  projectBatch: string;
+  totalTasksSubmitted: number;
+  totalApprovedTasks?: number;
+  totalPaymentDistributed: number;
+  paymentDate: string; // YYYY-MM-DD
+  additionalNotes?: string;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
 // Password hashing utility using built-in Node crypto (scrypt)
 export function hashPassword(password: string): string {
   if (!password) return '';
@@ -268,6 +282,7 @@ class DatabaseService {
   private updatesCache: StoredProjectUpdate[] = [];
   private quickTasksCache: StoredQuickTask[] = [];
   private quickTaskSubmissionsCache: StoredQuickTaskSubmission[] = [];
+  private projectPaymentRecordsCache: StoredProjectPaymentRecord[] = [];
 
   constructor() {
     const rawUsers = loadJsonFile<StoredUser[]>('users.json', []);
@@ -296,9 +311,17 @@ class DatabaseService {
       status: 'active',
       createdAt: '2026-09-20T10:00:00.000Z',
     };
-    const loadedQuickTasks = loadJsonFile<StoredQuickTask[]>('quick_tasks.json', [defaultQuickTask]);
-    this.quickTasksCache = loadedQuickTasks.length > 0 ? loadedQuickTasks : [defaultQuickTask];
+    const quickTasksFileExists = fs.existsSync(path.join(DATA_DIR, 'quick_tasks.json'));
+    if (quickTasksFileExists) {
+      this.quickTasksCache = loadJsonFile<StoredQuickTask[]>('quick_tasks.json', []);
+    } else {
+      this.quickTasksCache = [defaultQuickTask];
+      writeJsonFile('quick_tasks.json', this.quickTasksCache);
+    }
     this.quickTaskSubmissionsCache = loadJsonFile<StoredQuickTaskSubmission[]>('quick_task_submissions.json', []);
+
+    // Load manual Project Payment Records (admin notebook)
+    this.projectPaymentRecordsCache = loadJsonFile<StoredProjectPaymentRecord[]>('project_payment_records.json', []);
 
     // Immediately guarantee single Admin account exists in memory with hashed password
     this.ensureSingleAdminAccount();
@@ -765,6 +788,7 @@ class DatabaseService {
     writeJsonFile('updates.json', this.updatesCache);
     writeJsonFile('quick_tasks.json', this.quickTasksCache);
     writeJsonFile('quick_task_submissions.json', this.quickTaskSubmissionsCache);
+    writeJsonFile('project_payment_records.json', this.projectPaymentRecordsCache);
   }
 
   private recalculateProjectCapacities(): void {
@@ -1381,6 +1405,10 @@ class DatabaseService {
         userId: updates.userId || `usr-${Date.now().toString().slice(-5)}`,
         userName: updates.userName || 'Contributor',
         userEmail: updates.userEmail || 'contributor@nexora.work',
+        languages: updates.languages || ['Arabic', 'English'],
+        languageProficiency: updates.languageProficiency || 'Proficient',
+        skills: updates.skills || ['Translation & Localization'],
+        experience: updates.experience || 'Professional Contributor',
         status: updates.status || 'Applied',
         appliedDate: updates.appliedDate || new Date().toISOString().split('T')[0],
         reviewedDate: updates.status ? new Date().toISOString().split('T')[0] : undefined,
@@ -1395,6 +1423,16 @@ class DatabaseService {
     const updatedApp: StoredApplication = {
       ...app,
       ...updates,
+      languages: Array.isArray(updates.languages)
+        ? updates.languages
+        : Array.isArray(app.languages)
+        ? app.languages
+        : ['Arabic', 'English'],
+      skills: Array.isArray(updates.skills)
+        ? updates.skills
+        : Array.isArray(app.skills)
+        ? app.skills
+        : ['Translation & Localization'],
       reviewedDate: updates.status ? new Date().toISOString().split('T')[0] : app.reviewedDate,
     };
 
@@ -1573,6 +1611,62 @@ class DatabaseService {
     this.quickTaskSubmissionsCache = this.quickTaskSubmissionsCache.filter((s) => s.id !== id);
     this.saveAll();
     return this.quickTaskSubmissionsCache.length < prevLen;
+  }
+
+  // =================== PROJECT PAYMENT RECORDS (ADMIN NOTEBOOK) API ===================
+
+  public async getProjectPaymentRecords(): Promise<StoredProjectPaymentRecord[]> {
+    // Sort by paymentDate descending, then createdAt descending
+    return [...this.projectPaymentRecordsCache].sort((a, b) => {
+      const dateCmp = (b.paymentDate || '').localeCompare(a.paymentDate || '');
+      if (dateCmp !== 0) return dateCmp;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
+  }
+
+  public async getProjectPaymentRecordById(id: string): Promise<StoredProjectPaymentRecord | undefined> {
+    return this.projectPaymentRecordsCache.find((r) => r.id === id);
+  }
+
+  public async createProjectPaymentRecord(
+    data: Omit<StoredProjectPaymentRecord, 'id' | 'createdAt'> & { id?: string; createdAt?: string }
+  ): Promise<StoredProjectPaymentRecord> {
+    const newRecord: StoredProjectPaymentRecord = {
+      ...data,
+      id: data.id || `prec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: data.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.projectPaymentRecordsCache.unshift(newRecord);
+    this.saveAll();
+    return newRecord;
+  }
+
+  public async updateProjectPaymentRecord(
+    id: string,
+    updates: Partial<StoredProjectPaymentRecord>
+  ): Promise<StoredProjectPaymentRecord | undefined> {
+    const idx = this.projectPaymentRecordsCache.findIndex((r) => r.id === id);
+    if (idx === -1) return undefined;
+
+    const existing = this.projectPaymentRecordsCache[idx];
+    const updated: StoredProjectPaymentRecord = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      createdAt: existing.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+    this.projectPaymentRecordsCache[idx] = updated;
+    this.saveAll();
+    return updated;
+  }
+
+  public async deleteProjectPaymentRecord(id: string): Promise<boolean> {
+    const prevLen = this.projectPaymentRecordsCache.length;
+    this.projectPaymentRecordsCache = this.projectPaymentRecordsCache.filter((r) => r.id !== id);
+    this.saveAll();
+    return this.projectPaymentRecordsCache.length < prevLen;
   }
 
   // =================== STATISTICS (Zero Mock Data) ===================

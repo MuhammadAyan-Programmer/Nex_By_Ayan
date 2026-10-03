@@ -54,6 +54,34 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
   // Detailed Review Modal
   const [activeApp, setActiveApp] = useState<Application | null>(null);
   const [reviewNotes, setReviewNotes] = useState('');
+  const [processingAppId, setProcessingAppId] = useState<string | null>(null);
+  const [notificationMsg, setNotificationMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Safe formatting helpers to prevent any possible React render crashes
+  const formatProficiency = (prof: any): string => {
+    if (!prof) return 'Proficient';
+    if (typeof prof === 'string') return prof;
+    if (typeof prof === 'object') {
+      try {
+        return Object.entries(prof).map(([k, v]) => `${k}: ${v}`).join(', ');
+      } catch {
+        return 'Proficient';
+      }
+    }
+    return String(prof);
+  };
+
+  const formatLanguages = (langs: any): string => {
+    if (Array.isArray(langs) && langs.length > 0) return langs.join(', ');
+    if (typeof langs === 'string') return langs;
+    return 'Arabic, English';
+  };
+
+  const getSkillsArray = (skills: any): string[] => {
+    if (Array.isArray(skills)) return skills.filter(Boolean).map(String);
+    if (typeof skills === 'string') return [skills];
+    return [];
+  };
 
   const totalCount = applications.length;
   const pendingCount = applications.filter((a) => a.status === 'Applied' || a.status === 'Under Review').length;
@@ -61,10 +89,11 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
   const rejectedCount = applications.filter((a) => a.status === 'Rejected').length;
 
   const filteredApps = applications.filter((app) => {
-    const matchSearch =
-      app.userName.toLowerCase().includes(search.toLowerCase()) ||
-      app.userEmail.toLowerCase().includes(search.toLowerCase()) ||
-      app.projectName.toLowerCase().includes(search.toLowerCase());
+    const userName = (app.userName || '').toLowerCase();
+    const userEmail = (app.userEmail || '').toLowerCase();
+    const projName = (app.projectName || '').toLowerCase();
+    const q = search.toLowerCase();
+    const matchSearch = userName.includes(q) || userEmail.includes(q) || projName.includes(q);
     const matchProj = selectedProjectId === 'ALL' || app.projectId === selectedProjectId;
     const matchStatus = statusFilter === 'ALL' || app.status === statusFilter;
     return matchSearch && matchProj && matchStatus;
@@ -84,10 +113,24 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
     );
   };
 
-  const handleBulkApprove = () => {
-    if (selectedAppIds.length === 0) return;
-    bulkApproveApplications(selectedAppIds);
-    setSelectedAppIds([]);
+  const handleBulkApprove = async () => {
+    if (selectedAppIds.length === 0 || processingAppId) return;
+    try {
+      setProcessingAppId('bulk');
+      await bulkApproveApplications(selectedAppIds);
+      setNotificationMsg({
+        type: 'success',
+        text: `Successfully approved ${selectedAppIds.length} contributor applications!`,
+      });
+      setSelectedAppIds([]);
+    } catch (err: any) {
+      setNotificationMsg({
+        type: 'error',
+        text: err?.message || 'Failed to bulk approve applications.',
+      });
+    } finally {
+      setProcessingAppId(null);
+    }
   };
 
   const openReviewModal = (app: Application) => {
@@ -95,10 +138,42 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
     setReviewNotes(app.notes || '');
   };
 
-  const handleStatusChange = (status: ApplicationStatus) => {
-    if (!activeApp) return;
-    updateApplicationStatus(activeApp.id, status, reviewNotes);
-    setActiveApp(null);
+  const handleStatusChange = async (status: ApplicationStatus, targetAppId?: string, notes?: string) => {
+    const appId = targetAppId || activeApp?.id;
+    if (!appId || processingAppId) return;
+
+    const appToUpdate = applications.find((a) => a.id === appId);
+    if (!appToUpdate) return;
+
+    if (appToUpdate.status === status && status === 'Approved') {
+      setNotificationMsg({
+        type: 'success',
+        text: `Application for "${appToUpdate.userName}" is already Approved.`,
+      });
+      if (activeApp?.id === appId) setActiveApp(null);
+      return;
+    }
+
+    try {
+      setProcessingAppId(appId);
+      setNotificationMsg(null);
+      await updateApplicationStatus(appId, status, notes !== undefined ? notes : reviewNotes);
+      setNotificationMsg({
+        type: 'success',
+        text: `Application for "${appToUpdate.userName}" has been successfully marked as ${status}!`,
+      });
+      if (activeApp?.id === appId) {
+        setActiveApp(null);
+      }
+    } catch (err: any) {
+      console.error('Failed to update application status:', err);
+      setNotificationMsg({
+        type: 'error',
+        text: err?.message || 'Failed to update application status. Please try again.',
+      });
+    } finally {
+      setProcessingAppId(null);
+    }
   };
 
   return (
@@ -137,10 +212,15 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
               </span>
               <button
                 type="button"
+                disabled={processingAppId !== null}
                 onClick={handleBulkApprove}
-                className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                <CheckCircle2 className="w-3.5 h-3.5" />
+                {processingAppId === 'bulk' ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                )}
                 Bulk Approve Selected
               </button>
             </div>
@@ -150,7 +230,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
             type="button"
             onClick={() => refreshLiveServerData()}
             disabled={isSyncing}
-            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
             title="Force refresh applications from server"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-purple-600' : 'text-slate-500'}`} />
@@ -158,6 +238,33 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
           </button>
         </div>
       </div>
+
+      {/* Action Status Notification Toast / Banner */}
+      {notificationMsg && (
+        <div
+          className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs shadow-xs animate-in fade-in slide-in-from-top-2 ${
+            notificationMsg.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border-rose-200 text-rose-900'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {notificationMsg.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span className="font-medium">{notificationMsg.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotificationMsg(null)}
+            className="p-1 text-slate-400 hover:text-slate-700 rounded-md cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {syncError && (
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 text-amber-800 text-sm shadow-xs">
@@ -382,7 +489,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
                         <span className="text-[10px] text-slate-400">{app.projectCategory}</span>
                       </td>
                       <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">
-                        {app.languages.join(', ')}
+                        {formatLanguages(app.languages)}
                       </td>
                       <td className="px-4 py-3.5 text-slate-500 whitespace-nowrap">
                         {app.appliedDate}
@@ -406,6 +513,25 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
                       </td>
                       <td className="px-4 py-3.5 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
+                          {app.status !== 'Approved' && (
+                            <button
+                              type="button"
+                              disabled={processingAppId !== null}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStatusChange('Approved', app.id);
+                              }}
+                              className="px-2.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Immediately approve contributor application"
+                            >
+                              {processingAppId === app.id ? (
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-3 h-3" />
+                              )}
+                              Approve
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => openReviewModal(app)}
@@ -464,7 +590,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase">Languages</span>
                     <span className="font-semibold text-slate-800">
-                      {activeApp.languages.join(', ')} ({activeApp.languageProficiency})
+                      {formatLanguages(activeApp.languages)} ({formatProficiency(activeApp.languageProficiency)})
                     </span>
                   </div>
                   <div>
@@ -486,7 +612,7 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
               <div>
                 <h4 className="font-bold text-slate-700 mb-1">Declared Competencies</h4>
                 <div className="flex flex-wrap gap-1.5">
-                  {activeApp.skills.map((s) => (
+                  {getSkillsArray(activeApp.skills).map((s) => (
                     <span
                       key={s}
                       className="px-2.5 py-0.5 bg-slate-100 text-slate-700 rounded-full font-medium"
@@ -611,15 +737,17 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={processingAppId !== null}
                     onClick={() => handleStatusChange('Waitlisted')}
-                    className="px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200"
+                    className="px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-50 rounded-lg border border-purple-200 cursor-pointer"
                   >
                     Waitlist
                   </button>
                   <button
                     type="button"
+                    disabled={processingAppId !== null}
                     onClick={() => handleStatusChange('Rejected')}
-                    className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200"
+                    className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 rounded-lg border border-rose-200 cursor-pointer"
                   >
                     Reject
                   </button>
@@ -628,17 +756,23 @@ export const AdminApplicationsView: React.FC<AdminApplicationsViewProps> = ({ in
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={processingAppId !== null}
                     onClick={() => handleStatusChange('Under Review')}
-                    className="px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200"
+                    className="px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 rounded-lg border border-amber-200 cursor-pointer"
                   >
                     Mark Under Review
                   </button>
                   <button
                     type="button"
+                    disabled={processingAppId !== null}
                     onClick={() => handleStatusChange('Approved')}
-                    className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm flex items-center gap-1.5"
+                    className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {processingAppId === activeApp.id ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    )}
                     Approve Contributor
                   </button>
                 </div>

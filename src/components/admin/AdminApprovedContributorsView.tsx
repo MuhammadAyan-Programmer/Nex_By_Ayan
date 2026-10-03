@@ -20,10 +20,11 @@ export const AdminApprovedContributorsView: React.FC<AdminApprovedContributorsVi
   const approvedApps = applications.filter((a) => a.status === 'Approved');
 
   const filteredContributors = approvedApps.filter((app) => {
-    const matchSearch =
-      app.userName.toLowerCase().includes(search.toLowerCase()) ||
-      app.userEmail.toLowerCase().includes(search.toLowerCase()) ||
-      app.projectName.toLowerCase().includes(search.toLowerCase());
+    const uName = (app.userName || '').toLowerCase();
+    const uEmail = (app.userEmail || '').toLowerCase();
+    const pName = (app.projectName || '').toLowerCase();
+    const q = search.toLowerCase();
+    const matchSearch = uName.includes(q) || uEmail.includes(q) || pName.includes(q);
     const matchProj = selectedProjectId === 'ALL' || app.projectId === selectedProjectId;
     return matchSearch && matchProj;
   });
@@ -120,7 +121,11 @@ export const AdminApprovedContributorsView: React.FC<AdminApprovedContributorsVi
                       <span className="text-[10px] text-slate-400">{app.projectCategory}</span>
                     </td>
                     <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">
-                      {app.languages.join(', ')}
+                      {Array.isArray(app.languages) && app.languages.length > 0
+                        ? app.languages.join(', ')
+                        : typeof app.languages === 'string'
+                        ? app.languages
+                        : 'Arabic, English'}
                     </td>
                     <td className="px-4 py-3.5 whitespace-nowrap">
                       <Badge variant="green">● Active Contributor</Badge>

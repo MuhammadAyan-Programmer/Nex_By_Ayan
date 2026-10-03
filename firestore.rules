@@ -46,6 +46,13 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // Admin-only manual project payment history records
+    match /project_payment_records/{recordId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
     // System configuration and maintenance status
     match /system/{docId} {
       allow read: if true;
