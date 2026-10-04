@@ -75,10 +75,65 @@ export const AdminQuickTasksView: React.FC<AdminQuickTasksViewProps> = ({ initia
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
+  // Ensure tasks from submissions or default are always visible and shown
+  const allTasks = useMemo(() => {
+    const list = [...quickTasks];
+    const taskIds = new Set(list.map((t) => t.id));
+
+    // If quickTasks is empty but submissions exist, reconstitute the task so submissions can be reviewed
+    if (list.length === 0 && quickTaskSubmissions.length > 0) {
+      const sub = quickTaskSubmissions[0];
+      const fallbackTask: QuickTask = {
+        id: sub?.taskId || 'task-quick-001',
+        title: sub?.taskTitle || 'Share Nexora Workforce on LinkedIn',
+        description: 'Create a short public post on LinkedIn introducing Nexora Workforce and submit your post link.',
+        instructions: '1. Log into your LinkedIn account.\n2. Write a short, professional post introducing Nexora Workforce to your network (mentioning our platform at https://nexora.work).\n3. Publish the post with visibility set to Public.\n4. Copy the URL of your published post and paste it into the submission link field below.',
+        submissionRequirements: 'Provide the direct URL of your public LinkedIn post. Optionally include any additional notes in the text field.',
+        referenceLink: 'https://www.linkedin.com',
+        reward: '$5.00',
+        status: 'active',
+        createdAt: '2026-09-20T10:00:00.000Z',
+      };
+      list.push(fallbackTask);
+      taskIds.add(fallbackTask.id);
+    } else if (list.length === 0) {
+      list.push({
+        id: 'task-quick-001',
+        title: 'Share Nexora Workforce on LinkedIn',
+        description: 'Create a short public post on LinkedIn introducing Nexora Workforce and submit your post link.',
+        instructions: '1. Log into your LinkedIn account.\n2. Write a short, professional post introducing Nexora Workforce to your network (mentioning our platform at https://nexora.work).\n3. Publish the post with visibility set to Public.\n4. Copy the URL of your published post and paste it into the submission link field below.',
+        submissionRequirements: 'Provide the direct URL of your public LinkedIn post. Optionally include any additional notes in the text field.',
+        referenceLink: 'https://www.linkedin.com',
+        reward: '$5.00',
+        status: 'active',
+        createdAt: '2026-09-20T10:00:00.000Z',
+      });
+    }
+
+    // Also include any other task referenced by submissions
+    for (const sub of quickTaskSubmissions) {
+      if (sub.taskId && !taskIds.has(sub.taskId)) {
+        taskIds.add(sub.taskId);
+        list.push({
+          id: sub.taskId,
+          title: sub.taskTitle || 'Quick Task',
+          description: 'Quick task with active contributor submissions.',
+          instructions: 'Review submitted links and text from contributors below.',
+          submissionRequirements: 'Submission response required.',
+          referenceLink: 'https://www.linkedin.com',
+          reward: '$5.00',
+          status: 'active',
+          createdAt: sub.submittedAt || new Date().toISOString(),
+        });
+      }
+    }
+    return list;
+  }, [quickTasks, quickTaskSubmissions]);
+
   // Selected task object
   const activeTask = useMemo(() => {
-    return quickTasks.find((t) => t.id === selectedTaskId) || null;
-  }, [quickTasks, selectedTaskId]);
+    return allTasks.find((t) => t.id === selectedTaskId) || null;
+  }, [allTasks, selectedTaskId]);
 
   // Submissions for the selected task
   const taskSubmissions = useMemo(() => {
@@ -87,14 +142,14 @@ export const AdminQuickTasksView: React.FC<AdminQuickTasksViewProps> = ({ initia
   }, [quickTaskSubmissions, selectedTaskId]);
 
   // Overall metrics
-  const totalTasks = quickTasks.length;
-  const activeTasksCount = quickTasks.filter((t) => t.status === 'active').length;
+  const totalTasks = allTasks.length;
+  const activeTasksCount = allTasks.filter((t) => t.status === 'active').length;
   const totalSubmissionsCount = quickTaskSubmissions.length;
   const pendingSubmissionsCount = quickTaskSubmissions.filter((s) => s.status === 'pending').length;
 
   // Filtered tasks
   const filteredTasks = useMemo(() => {
-    return quickTasks.filter((task) => {
+    return allTasks.filter((task) => {
       const matchSearch =
         task.title.toLowerCase().includes(taskSearch.toLowerCase()) ||
         task.description.toLowerCase().includes(taskSearch.toLowerCase());
@@ -102,7 +157,7 @@ export const AdminQuickTasksView: React.FC<AdminQuickTasksViewProps> = ({ initia
         taskStatusFilter === 'all' ? true : task.status === taskStatusFilter;
       return matchSearch && matchStatus;
     });
-  }, [quickTasks, taskSearch, taskStatusFilter]);
+  }, [allTasks, taskSearch, taskStatusFilter]);
 
   // Filtered submissions for selected task
   const filteredSubmissions = useMemo(() => {
@@ -116,6 +171,15 @@ export const AdminQuickTasksView: React.FC<AdminQuickTasksViewProps> = ({ initia
       return matchStatus && matchSearch;
     });
   }, [taskSubmissions, subStatusFilter, subSearch]);
+
+  // Auto-sync missing tasks into state if submissions exist
+  React.useEffect(() => {
+    if (quickTasks.length === 0 && allTasks.length > 0) {
+      for (const t of allTasks) {
+        createQuickTask(t);
+      }
+    }
+  }, [quickTasks.length, allTasks, createQuickTask]);
 
   const openCreateModal = () => {
     setEditingTask(null);

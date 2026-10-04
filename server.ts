@@ -555,6 +555,40 @@ apiRouter.patch('/users/:id/verify-email', async (req: Request, res: Response) =
   }
 });
 
+// POST /api/users/:id/verify-skill - Toggle skill endorsement / verification by admin
+apiRouter.post('/users/:id/verify-skill', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { skill } = req.body || {};
+    if (!skill || typeof skill !== 'string') {
+      return res.status(400).json({ success: false, message: 'Skill name is required' });
+    }
+    const user = await db.getUserById(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const current = new Set(user.verifiedSkills || user.endorsedSkills || []);
+    const cleanSkill = skill.trim();
+    if (current.has(cleanSkill)) {
+      current.delete(cleanSkill);
+    } else {
+      current.add(cleanSkill);
+    }
+    const verifiedSkills = Array.from(current);
+    const updated = await db.updateUser(id, { verifiedSkills, endorsedSkills: verifiedSkills });
+    const { password: _, ...safeUser } = updated!;
+    res.json({
+      success: true,
+      verifiedSkills,
+      isVerified: current.has(cleanSkill),
+      user: safeUser,
+      message: current.has(cleanSkill) ? `Skill "${cleanSkill}" verified.` : `Skill "${cleanSkill}" verification removed.`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // POST /api/users/sync - Client-to-server users sync (preserves existing data from localStorage)
 apiRouter.post('/users/sync', async (req: Request, res: Response) => {
   try {

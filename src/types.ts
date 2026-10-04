@@ -92,13 +92,17 @@ export interface UserProfile {
   id: string;
   firstName: string;
   lastName: string;
+  displayName?: string;
   email: string;
   phone?: string;
   country: string;
   languages: string[];
   languageProficiency: Record<string, string>;
   skills: string[];
+  verifiedSkills?: string[];
+  endorsedSkills?: string[];
   experience: string;
+  bio?: string;
   cvLink?: string;
   resumeUrl?: string;
   resumeText?: string;

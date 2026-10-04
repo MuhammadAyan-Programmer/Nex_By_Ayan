@@ -112,6 +112,7 @@ interface AppContextType {
   verifyEmail: () => void;
   logout: () => void;
   updateProfile: (profile: Partial<UserProfile>) => void;
+  toggleUserSkillVerification: (userId: string, skill: string) => void;
 
   // Users Directory
   users: UserProfile[];
@@ -424,18 +425,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [quickTasks, setQuickTasks] = useState<QuickTask[]>(() => {
     try {
-      const isInitialized = typeof window !== 'undefined' ? localStorage.getItem('nexora_quickTasks_initialized') : null;
-      const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
-      if (isInitialized) {
-        const stored = loadStorage<QuickTask[]>('quickTasks', []);
-        return stored.filter((t) => !deletedIds.has(t.id));
-      }
       if (typeof window !== 'undefined') {
-        localStorage.setItem('nexora_quickTasks_initialized', 'true');
+        localStorage.removeItem('nexora_deletedQuickTaskIds');
       }
-      const initial = [DEFAULT_INITIAL_QUICK_TASK].filter((t) => !deletedIds.has(t.id));
-      saveStorage('quickTasks', initial);
-      return initial;
+      const stored = loadStorage<QuickTask[]>('quickTasks', []);
+      if (stored && Array.isArray(stored) && stored.length > 0) {
+        return stored;
+      }
+      saveStorage('quickTasks', [DEFAULT_INITIAL_QUICK_TASK]);
+      return [DEFAULT_INITIAL_QUICK_TASK];
     } catch {
       return [DEFAULT_INITIAL_QUICK_TASK];
     }
@@ -550,11 +548,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Apply Quick Tasks immediately
-      if (qtaskRes?.success && Array.isArray(qtaskRes.tasks)) {
-        const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
-        const filteredTasks = qtaskRes.tasks.filter((t: QuickTask) => !deletedIds.has(t.id));
-        setQuickTasks(filteredTasks);
-        saveStorage('quickTasks', filteredTasks);
+      if (qtaskRes?.success && Array.isArray(qtaskRes.tasks) && qtaskRes.tasks.length > 0) {
+        setQuickTasks(qtaskRes.tasks);
+        saveStorage('quickTasks', qtaskRes.tasks);
       }
 
       // Apply Quick Task Submissions immediately
@@ -653,11 +649,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               setProjects(fbProjects);
             }
 
-            if (fbQuickTasks && Array.isArray(fbQuickTasks)) {
-              const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
-              const filteredTasks = fbQuickTasks.filter((t) => !deletedIds.has(t.id));
-              setQuickTasks(filteredTasks);
-              saveStorage('quickTasks', filteredTasks);
+            if (fbQuickTasks && Array.isArray(fbQuickTasks) && fbQuickTasks.length > 0) {
+              setQuickTasks((prev) => {
+                const map = new Map<string, QuickTask>();
+                for (const t of prev) map.set(t.id, t);
+                for (const t of fbQuickTasks) map.set(t.id, t);
+                const merged = Array.from(map.values());
+                saveStorage('quickTasks', merged);
+                return merged;
+              });
             }
 
             if (fbQuickSubs && fbQuickSubs.length > 0) {
@@ -792,11 +792,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 3. Firebase Firestore Real-Time Listener for Quick Tasks
     const unsubscribeQuickTasks = subscribeToQuickTasksFirestore(
       (fbTasks) => {
-        if (fbTasks && Array.isArray(fbTasks)) {
-          const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
-          const filteredTasks = fbTasks.filter((t) => !deletedIds.has(t.id));
-          setQuickTasks(filteredTasks);
-          saveStorage('quickTasks', filteredTasks);
+        if (fbTasks && Array.isArray(fbTasks) && fbTasks.length > 0) {
+          setQuickTasks((prev) => {
+            const map = new Map<string, QuickTask>();
+            for (const t of prev) map.set(t.id, t);
+            for (const t of fbTasks) map.set(t.id, t);
+            const merged = Array.from(map.values());
+            saveStorage('quickTasks', merged);
+            return merged;
+          });
         }
       },
       (err) => {
@@ -1564,7 +1568,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!currentUser) return;
     const updated = { ...currentUser, ...profile };
     setCurrentUserState(updated);
-    setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? { ...u, ...profile } : u)));
+    saveStorage('currentUser', updated);
+    setUsers((prev) => {
+      const next = prev.map((u) => (u.id === currentUser.id ? { ...u, ...profile } : u));
+      saveStorage('users', next);
+      return next;
+    });
+    saveUserToFirestore(updated).catch(() => {});
+    fetch(`${API_BASE}/api/users/${currentUser.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    }).catch(() => {});
   };
 
   // User management for admin
@@ -1604,6 +1619,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return next;
     });
     fetch(`${API_BASE}/api/users/${id}/verify-email`, { method: 'PATCH' }).catch(() => {});
+  };
+
+  const toggleUserSkillVerification = (userId: string, skill: string) => {
+    setUsers((prev) => {
+      const next = prev.map((u) => {
+        if (u.id === userId) {
+          const currentVerified = new Set(u.verifiedSkills || u.endorsedSkills || []);
+          if (currentVerified.has(skill)) {
+            currentVerified.delete(skill);
+          } else {
+            currentVerified.add(skill);
+          }
+          const verifiedArray = Array.from(currentVerified);
+          const updated: UserProfile = {
+            ...u,
+            verifiedSkills: verifiedArray,
+            endorsedSkills: verifiedArray,
+          };
+          if (currentUser && currentUser.id === userId) {
+            setCurrentUserState(updated);
+            saveStorage('currentUser', updated);
+          }
+          saveUserToFirestore(updated).catch(() => {});
+          return updated;
+        }
+        return u;
+      });
+      saveStorage('users', next);
+      return next;
+    });
+
+    fetch(`${API_BASE}/api/users/${userId}/verify-skill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skill }),
+    }).catch(() => {});
   };
 
   const approveUser = async (id: string): Promise<boolean> => {
@@ -2382,13 +2433,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteQuickTask = async (id: string): Promise<boolean> => {
-    // Record in persistent deleted set so it can never reappear
-    try {
-      const deletedIds = new Set(loadStorage<string[]>('deletedQuickTaskIds', []));
-      deletedIds.add(id);
-      saveStorage('deletedQuickTaskIds', Array.from(deletedIds));
-    } catch {}
-
     setQuickTasks((prev) => {
       const next = prev.filter((t) => t.id !== id);
       saveStorage('quickTasks', next);
@@ -2907,6 +2951,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         verifyEmail,
         logout,
         updateProfile,
+        toggleUserSkillVerification,
 
         users,
         toggleUserStatus,

@@ -18,6 +18,10 @@ export interface StoredUser {
   cvLink?: string;
   resumeUrl?: string;
   resumeText?: string;
+  verifiedSkills?: string[];
+  endorsedSkills?: string[];
+  displayName?: string;
+  bio?: string;
   role: 'contributor' | 'admin';
   isEmailVerified: boolean;
   emailVerified?: boolean;
